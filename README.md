@@ -134,6 +134,10 @@ Quelques partis pris qui expliquent la structure :
 * **Un processus par partie.** Toutes les actions passent par des `call`
   adressés au `GameServer`, ce qui supprime toute condition de course entre
   joueurs d'un même salon.
+* **L'IA marque une pause.** Elle tire un délai aléatoire de 1 à 3 secondes
+  avant chaque action (`GameServer.bot_delay/0`) : sans cela elle enchaîne le
+  dé et le déplacement trop vite pour qu'on puisse lire le numéro qu'elle vient
+  de faire.
 * **La géométrie vient du serveur.** `Ludo.Board.geometry/0` est envoyée au
   navigateur à la connexion : ni le panneau ni la scène 3D ne connaissent de
   coordonnée, et il n'existe qu'une seule source de vérité pour la forme du
@@ -166,7 +170,7 @@ de frappe ne se verrait sinon qu'à l'exécution, chez l'utilisateur.
 ## Tests
 
 ```bash
-mix test                      # 153 tests : règles, IA, lobby, canaux, pages
+mix test                      # 156 tests : règles, IA, lobby, canaux, pages
 
 # serveur lancé (mix phx.server ou docker compose up)
 node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel

@@ -23,7 +23,13 @@ defmodule Ludo.GameServer do
   alias Ludo.{Bot, Game, Lobby}
 
   @pubsub Ludo.PubSub
-  @bot_delay 750
+
+  # L'IA ne joue pas instantanément : une pause aléatoire laisse le temps de voir
+  # le dé et le déplacement, et évite qu'elle enchaîne ses coups comme une
+  # machine. Le tirage est refait à chaque action (voir `bot_delay/0`).
+  @bot_delay_min 1_000
+  @bot_delay_max 3_000
+
   @turn_timeout 60_000
 
   # ---------------------------------------------------------------------------
@@ -54,6 +60,23 @@ defmodule Ludo.GameServer do
 
   @doc "Abonne l'appelant aux mises à jour du salon."
   def subscribe(code), do: Phoenix.PubSub.subscribe(@pubsub, topic(code))
+
+  @doc """
+  Délai avant que l'IA ne joue, tiré au hasard entre #{@bot_delay_min} et
+  #{@bot_delay_max} millisecondes.
+
+  Le tirage est refait à **chaque** action : l'IA marque une pause avant de lancer
+  le dé, puis à nouveau avant de déplacer son pion — sans quoi on ne verrait
+  jamais le numéro qu'elle vient de faire.
+  """
+  @spec bot_delay() :: pos_integer()
+  def bot_delay do
+    @bot_delay_min + :rand.uniform(@bot_delay_max - @bot_delay_min + 1) - 1
+  end
+
+  @doc "Bornes du délai de l'IA, en millisecondes."
+  @spec bot_delay_range() :: {pos_integer(), pos_integer()}
+  def bot_delay_range, do: {@bot_delay_min, @bot_delay_max}
 
   def game(code), do: call(code, :game)
   def public_state(code), do: call(code, :public_state)
@@ -300,7 +323,7 @@ defmodule Ludo.GameServer do
 
     cond do
       game.status != :playing -> state
-      Game.bot_turn?(game) -> schedule(state, :bot_tick, @bot_delay)
+      Game.bot_turn?(game) -> schedule(state, :bot_tick, bot_delay())
       true -> schedule(state, :turn_timeout, @turn_timeout)
     end
   end
