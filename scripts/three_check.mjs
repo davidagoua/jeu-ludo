@@ -361,6 +361,27 @@ const horsPlateau = of("cell").filter(
 );
 check("aucune case ne sort du plateau", horsPlateau.length === 0, horsPlateau.length);
 
+// Un triangle plat dont la face regarde vers le bas est éliminé par le
+// back-face culling : il existe, mais il est invisible. C'est ce qui était
+// arrivé aux triangles bleu et jaune, absents du plateau.
+let normalesOk = true;
+for (const tri of of("center")) {
+  const p = tri.geometry.getAttribute("position");
+  const a = new THREE.Vector3(p.getX(0), p.getY(0), p.getZ(0));
+  const b = new THREE.Vector3(p.getX(1), p.getY(1), p.getZ(1));
+  const c = new THREE.Vector3(p.getX(2), p.getY(2), p.getZ(2));
+  const normale = new THREE.Vector3()
+    .subVectors(b, a)
+    .cross(new THREE.Vector3().subVectors(c, a))
+    .normalize();
+
+  if (normale.y <= 0) {
+    normalesOk = false;
+    console.log("    triangle " + tri.userData.color + " : normal.y = " + normale.y.toFixed(3));
+  }
+}
+check("les quatre triangles du centre regardent vers le haut", normalesOk);
+
 const centresHors = of("center").filter((o) => {
   const p = o.geometry.getAttribute("position");
   for (let i = 0; i < p.count; i++) {
@@ -451,6 +472,69 @@ check(
   Math.abs(retour.x - baseAttendue.x) < 1e-3 && Math.abs(retour.z - baseAttendue.z) < 1e-3,
   retour
 );
+
+/* ------------------------------------------------------- dérive des pions */
+
+section("Les pions ne dérivent pas");
+
+// Deux pions sur la même case : le jeu l'autorise (les blocs ne sont pas
+// appliqués). Leur écartement était ajouté à la position courante à chaque mise
+// à jour, si bien qu'ils s'éloignaient indéfiniment — jusqu'à sortir du
+// plateau. On rejoue donc le même état des centaines de fois, comme le font les
+// diffusions du serveur au fil d'une partie.
+const etatPartage = {
+  status: "playing",
+  turn_color: geo.players[0],
+  dice: null,
+  legal_moves: [],
+  players: geo.players.map((color, seat) => ({
+    color,
+    seat,
+    tokens:
+      seat === 0 ? [5, 5, "base", "base"] : ["base", "base", "base", "base"]
+  }))
+};
+
+board.update(etatPartage, geo.players[0]);
+board.stepFrames(120);
+const avant = board.tokenPositions();
+
+for (let i = 0; i < 300; i++) {
+  board.update(etatPartage, geo.players[0]);
+  board.stepFrames(2);
+}
+board.stepFrames(120);
+
+const apres = board.tokenPositions();
+let stable = true;
+
+for (const key of Object.keys(avant)) {
+  const a = avant[key];
+  const b = apres[key];
+  if (Math.abs(a.x - b.x) > 1e-3 || Math.abs(a.z - b.z) > 1e-3) {
+    stable = false;
+    console.log("    " + key + " : " + JSON.stringify(a) + " -> " + JSON.stringify(b));
+  }
+}
+check("rejouer le même état ne déplace pas les pions", stable);
+
+const dehors = Object.entries(apres).filter(
+  ([, p]) => Math.abs(p.x) > 7.5 || Math.abs(p.z) > 7.5
+);
+check("aucun pion ne sort du plateau", dehors.length === 0, dehors.slice(0, 3));
+
+// l'écartement doit malgré tout fonctionner : les deux pions restent distincts
+const p0 = apres["red:0"];
+const p1 = apres["red:1"];
+const ecart = Math.hypot(p0.x - p1.x, p0.z - p1.z);
+check(
+  "les deux pions de la même case restent écartés",
+  ecart > 0.2 && ecart < 0.6,
+  Number(ecart.toFixed(3))
+);
+
+board.update(etatAvecPositions({}), geo.players[0]);
+board.settle();
 
 /* ----------------------------------------------------------- surbrillance */
 

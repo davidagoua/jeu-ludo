@@ -66,7 +66,16 @@ root.traverse((o) => {
     for (let i = 0; i < attr.count; i++) {
       points.push([attr.getX(i), attr.getZ(i)]);
     }
-    items.push({ kind, color: geo.colors[o.userData.color], points });
+
+    // La normale est exportée pour que l'aperçu puisse reproduire le back-face
+    // culling : une forme plate tournée vers le bas est invisible à l'écran.
+    const normale = o.geometry.getAttribute("normal");
+    items.push({
+      kind,
+      color: geo.colors[o.userData.color],
+      points,
+      normalY: normale ? normale.getY(0) : null
+    });
     return;
   }
 

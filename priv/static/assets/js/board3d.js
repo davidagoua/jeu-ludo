@@ -30,6 +30,7 @@ const FRAME_MARGIN = 0.7; // marge autour du plateau
 const STEP_MS = 130; // durée d'un déplacement d'une case
 const JUMP_MS = 420; // durée d'un saut (sortie de base, capture)
 const HOP = 0.34; // hauteur d'un petit bond
+const SPREAD = 0.17; // écartement de plusieurs pions sur une même case
 // Le dé est posé sous le plateau. En vue de dessus il paraîtrait minuscule à sa
 // taille d'origine : il est dimensionné par rapport au plateau.
 const DICE_SIZE = 1.5;
@@ -155,11 +156,16 @@ export function centerTriangle(geo, color) {
     corners = [[-d, d], [d, d]]; // bras bas
   }
 
-  return [
-    { x: corners[0][0], z: corners[0][1] },
-    { x: corners[1][0], z: corners[1][1] },
-    { x: 0, z: 0 }
-  ];
+  const a = { x: corners[0][0], z: corners[0][1] };
+  const b = { x: corners[1][0], z: corners[1][1] };
+  const centre = { x: 0, z: 0 };
+
+  // Sens de rotation garanti : la face doit regarder vers le haut. Dans le cas
+  // contraire le back-face culling élimine le triangle, qui disparaît
+  // purement et simplement du plateau.
+  const cross = (b.x - a.x) * (centre.z - a.z) - (b.z - a.z) * (centre.x - a.x);
+
+  return cross > 0 ? [a, centre, b] : [a, b, centre];
 }
 
 /* ------------------------------------------------------------------ scène */
@@ -291,7 +297,7 @@ function buildBoard() {
     if (safe) {
       const star = new THREE.Mesh(
         new THREE.ShapeGeometry(starShape()),
-        material(owner ? "#ffffff" : "#8494a8")
+        material(owner ? "#ffffff" : "#8494a8", { side: THREE.DoubleSide })
       );
       const p = cellToWorld(x, y);
       star.rotation.x = -Math.PI / 2;
@@ -361,7 +367,7 @@ function buildBoard() {
     );
     g.setIndex([0, 1, 2]);
     g.computeVertexNormals();
-    const mesh = new THREE.Mesh(g, material(geo.colors[color]));
+    const mesh = new THREE.Mesh(g, material(geo.colors[color], { side: THREE.DoubleSide }));
     mesh.userData = { kind: "center", color };
     boardGroup.add(mesh);
   }
@@ -460,20 +466,25 @@ function buildTokens() {
 
 /* ------------------------------------------------------------- animation */
 
-function moveNode(node, target, { jump = false, direct = false } = {}) {
+/**
+ * Anime un pion jusqu'à `destination` (écartement compris).
+ *
+ * `position` est la position logique visée, qui sert à déduire les cases
+ * intermédiaires quand le pion avance sur l'anneau ou dans sa colonne.
+ */
+function moveNode(node, position, destination, { jump = false, direct = false } = {}) {
   const path = [];
+
   if (!direct) {
-    const steps = pathBetween(node.userData.position, node.userData.pathTo);
-    for (const step of steps) {
+    for (const step of pathBetween(node.userData.position, position)) {
       const p = tokenWorldPosition(geo, node.userData.color, node.userData.index, step);
       if (p) path.push(p);
     }
   }
 
-  if (!path.length || direct) {
-    const p = tokenWorldPosition(geo, node.userData.color, node.userData.index, target);
-    if (p) path.push(p);
-  }
+  // la destination exacte est toujours la dernière étape : c'est elle qui fixe
+  // la position finale, sans dérive possible
+  path.push(destination);
 
   animations.push({
     node,
@@ -543,8 +554,9 @@ export function setGeometry(next) {
 export function update(state, myColor) {
   if (!root || !geo || !state) return;
 
-  // pions : on anime vers la nouvelle position
-  const occupied = new Map();
+  // 1. Où chaque pion doit aller, et lesquels se retrouvent sur la même case.
+  const placed = new Map(); // pion -> { target, position }
+  const occupied = new Map(); // case -> [pions]
 
   for (const player of state.players) {
     player.tokens.forEach((position, index) => {
@@ -554,32 +566,58 @@ export function update(state, myColor) {
       const target = tokenWorldPosition(geo, player.color, index, position);
       if (!target) return;
 
+      placed.set(node, { target, position });
+
       const key =
         position === "base"
-          ? player.color + ":base:" + index
+          ? "base:" + player.color + ":" + index
           : target.x.toFixed(2) + ":" + target.z.toFixed(2);
       if (!occupied.has(key)) occupied.set(key, []);
       occupied.get(key).push(node);
-
-      if (node.userData.position !== position) {
-        const previous = node.userData.position;
-        node.userData.pathTo = position;
-        const caught = position === "base" && typeof previous === "number";
-        const leaving = previous === "base";
-        const direct = previous === null || caught || leaving;
-        moveNode(node, position, { jump: direct, direct });
-        node.userData.position = position;
-      }
     });
   }
 
-  // plusieurs pions sur la même case : on les écarte un peu
+  // 2. Plusieurs pions sur une même case : on les écarte. C'est un décalage
+  //    ajouté à la DESTINATION et recalculé à chaque mise à jour — ajouté à la
+  //    position courante, il s'accumulait et finissait par sortir du plateau.
+  const spreadOf = new Map();
   for (const nodes of occupied.values()) {
     if (nodes.length < 2) continue;
+
     nodes.forEach((node, i) => {
-      const a = (Math.PI * 2 * i) / nodes.length + Math.PI / 4;
-      node.userData.spread = { x: Math.cos(a) * 0.17, z: Math.sin(a) * 0.17 };
+      const angle = (Math.PI * 2 * i) / nodes.length + Math.PI / 4;
+      spreadOf.set(node, { x: Math.cos(angle) * SPREAD, z: Math.sin(angle) * SPREAD });
     });
+  }
+
+  // 3. On anime un vrai déplacement, sinon on se contente de rejoindre la place.
+  for (const [node, entry] of placed) {
+    const spread = spreadOf.get(node) || { x: 0, z: 0 };
+    const destination = {
+      x: entry.target.x + spread.x,
+      y: entry.target.y,
+      z: entry.target.z + spread.z
+    };
+
+    const moved = node.userData.position !== entry.position;
+    const running = animations.some((a) => a.node === node);
+    const offTarget =
+      Math.abs(node.position.x - destination.x) > 1e-4 ||
+      Math.abs(node.position.z - destination.z) > 1e-4;
+
+    if (moved) {
+      const previous = node.userData.position;
+      const direct =
+        previous === null ||
+        (entry.position === "base" && typeof previous === "number") ||
+        previous === "base";
+
+      moveNode(node, entry.position, destination, { jump: direct, direct });
+      node.userData.position = entry.position;
+    } else if (!running && offTarget) {
+      // même case, mais l'écartement a changé : on rejoint la nouvelle place
+      moveNode(node, entry.position, destination, { jump: true, direct: true });
+    }
   }
 
   // pions jouables : anneau lumineux sous les pions que CE joueur peut bouger
@@ -605,9 +643,11 @@ export function update(state, myColor) {
   }
 }
 
-function render(dt) {
-  if (!renderer) return;
-
+/**
+ * Fait avancer la simulation d'une frame : animations, écartement des pions,
+ * dé, pulsations. Séparé du dessin pour rester vérifiable sans WebGL.
+ */
+function updateSimulation(dt) {
   stepAnimations(dt);
 
   // dé : rotation cible + tremblement pendant le lancer
@@ -637,16 +677,20 @@ function render(dt) {
       const s = 1 + 0.12 * Math.sin(performance.now() / 220);
       node.userData.ring.scale.setScalar(s);
     }
-    const spread = node.userData.spread;
-    if (spread) {
-      node.position.x += spread.x;
-      node.position.z += spread.z;
-      node.userData.spread = null;
-    }
   }
+}
+
+function render(dt) {
+  updateSimulation(dt);
+  if (!renderer) return;
 
   updateCamera();
   renderer.render(scene, camera);
+}
+
+/** Avance la simulation de `frames` frames (vérifications hors navigateur). */
+export function stepFrames(frames = 1, dt = 1 / 60) {
+  for (let i = 0; i < frames; i++) updateSimulation(dt);
 }
 
 function loop() {

@@ -182,6 +182,8 @@ node scripts/three_check.mjs /tmp/geometry.json      # 58 vérifications : scèn
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)
 node scripts/dump_board_top.mjs /tmp/geometry.json /tmp/board_top.json
+# la projection de dessus est une simple mise à l'échelle : l'aperçu reproduit
+# donc exactement le dessin du client, back-face culling compris
 ```
 
 `mix test` couvre notamment la géométrie (boucle fermée, symétrie des départs,
