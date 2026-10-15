@@ -230,9 +230,9 @@ defmodule Ludo.BoardTest do
       assert Enum.all?(safe, &(&1 in 0..55))
     end
 
-    test "alternent des écarts de 9 et 4 et sont régulières" do
+    test "alternent des écarts de 8 et 5 et sont régulières" do
       safe = Board.safe_indexes()
-      assert safe == [1, 10, 14, 23, 27, 36, 40, 49]
+      assert safe == [1, 9, 14, 22, 27, 35, 40, 48]
 
       gaps =
         safe
@@ -241,13 +241,35 @@ defmodule Ludo.BoardTest do
           rem(Enum.at(safe, rem(i + 1, 8)) - v + Board.ring_size(), Board.ring_size())
         end)
 
-      assert gaps == [9, 4, 9, 4, 9, 4, 9, 4]
+      assert gaps == [8, 5, 8, 5, 8, 5, 8, 5]
     end
 
-    test "les étoiles sont 9 cases après chaque départ" do
+    test "les étoiles sont 8 cases après chaque départ" do
       for player <- Board.players() do
-        star = rem(Board.start_index(player) + 9, Board.ring_size())
+        star = rem(Board.start_index(player) + 8, Board.ring_size())
         assert Board.safe_index?(star)
+      end
+    end
+
+    test "chaque étoile est sur la 4e case de la ligne de son bras" do
+      # Les quatre départs sont sûrs eux aussi ; on ne garde que les étoiles.
+      departs = Board.players() |> Enum.map(&Board.start_index/1)
+      etoiles = Board.safe_indexes() -- departs
+
+      assert length(etoiles) == 4
+
+      for index <- etoiles do
+        {x, y} = Enum.at(Board.ring(), index)
+
+        # à quatre cases du centre : la croix a 3 cases de large (6 à 8) et les
+        # bras six cases de long, donc la quatrième case du centre est en x (ou
+        # y) égal à 2 ou à 12.
+        assert x in [2, 12] or y in [2, 12],
+               "l'étoile {#{x},#{y}} n'est pas à quatre cases du centre"
+
+        # et elle est sur une ligne extérieure du bras, pas dans une colonne
+        assert y in [6, 8] or x in [6, 8],
+               "l'étoile {#{x},#{y}} n'est pas sur une ligne de bras"
       end
     end
 
@@ -338,7 +360,7 @@ defmodule Ludo.BoardTest do
       assert length(decoded["home_columns"]["blue"]) == 5
       assert length(decoded["bases"]["yellow"]) == 4
       assert length(decoded["center"]) == 9
-      assert decoded["safe_indexes"] == [1, 10, 14, 23, 27, 36, 40, 49]
+      assert decoded["safe_indexes"] == [1, 9, 14, 22, 27, 35, 40, 48]
       assert decoded["players"] == ["red", "blue", "yellow", "green"]
     end
 

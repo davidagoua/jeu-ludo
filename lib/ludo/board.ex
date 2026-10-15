@@ -136,9 +136,10 @@ defmodule Ludo.Board do
   # de sa couleur dans la zone d'arrivée.
   @center_entries %{red: {6, 7}, blue: {7, 6}, yellow: {8, 7}, green: {7, 8}}
 
-  # Cases sûres : les 4 cases de départ et les 4 cases « étoile » situées 9 cases
-  # après chaque départ. Aucune capture n'y a lieu.
-  @safe_indexes [1, 10, 14, 23, 27, 36, 40, 49]
+  # Cases sûres : les 4 cases de départ, et les 4 cases « étoile ». L'étoile se
+  # trouve sur la quatrième case de la ligne de son bras en partant du centre,
+  # soit huit cases après le départ. Aucune capture n'y a lieu.
+  @safe_indexes [1, 9, 14, 22, 27, 35, 40, 48]
 
   @colors %{
     red: "#e5484d",

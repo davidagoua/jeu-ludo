@@ -70,7 +70,7 @@ defmodule LudoWeb.GameChannelTest do
       assert length(geo.home_columns[:red]) == 5
       assert length(geo.bases[:blue]) == 4
       assert length(geo.center) == 9
-      assert geo.safe_indexes == [1, 10, 14, 23, 27, 36, 40, 49]
+      assert geo.safe_indexes == [1, 9, 14, 22, 27, 35, 40, 48]
       # le départ rouge se situe deux cases après l'entrée de sa colonne
       assert geo.starts[:red] == 1
       assert geo.colors[:red] =~ "#"

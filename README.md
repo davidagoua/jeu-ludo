@@ -101,7 +101,9 @@ en diagonale. Un pion parcourt donc 51 cases d'anneau, puis 5 cases de colonne,
 avant l'arrivée (57 pas en tout).
 
 Les huit **cases sûres** sont les quatre départs (cases colorées, étoile
-blanche) et les quatre cases étoile situées 9 cases plus loin (étoile grise).
+blanche) et les quatre cases étoile (étoile grise), huit cases après le départ.
+Chaque étoile tombe ainsi sur la **quatrième case de la ligne de son bras en
+partant du centre** : (6,2), (12,6), (8,12) et (2,8).
 
 ## Règles appliquées
 
