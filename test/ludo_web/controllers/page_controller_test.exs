@@ -40,6 +40,33 @@ defmodule LudoWeb.PageControllerTest do
       assert html =~ "2 joueurs"
     end
 
+    test "le dé est un bouton, sans bouton de lancer séparé", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-3333")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      # c'est le dé lui-même qui sert de bouton…
+      assert html =~
+               ~r/<button[^>]*class="dice"[^>]*id="dice"|<button[^>]*id="dice"[^>]*class="dice"/
+
+      # …et il n'y a plus de bouton de lancer à côté
+      refute html =~ ~s(id="roll")
+      refute html =~ "dice-box"
+
+      # le dé reste décrit pour les lecteurs d'écran
+      assert html =~ ~s(aria-label="Lancer le dé")
+    end
+
+    test "la vue est allégée : plus de journal", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-4444")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      refute html =~ "Journal"
+      refute html =~ ~s(id="log")
+      # la liste des joueurs reste, mais dans une colonne étroite
+      assert html =~ ~s(id="players")
+      assert html =~ ~s(class="side")
+    end
+
     test "accepte un code en minuscules", %{conn: conn} do
       {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-2222")
       html = get(conn, ~p"/partie/#{String.downcase(code)}") |> html_response(200)

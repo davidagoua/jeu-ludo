@@ -197,47 +197,62 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .game-header .secondary { margin-left: auto; width: auto; }
 
+/* Le plateau occupe l'essentiel de la largeur : la colonne de droite est
+   réduite au strict nécessaire (joueurs + dé). */
 .game-layout {
   display: grid;
-  grid-template-columns: 220px minmax(320px, 1fr) 260px;
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 0.9rem;
   align-items: start;
 }
-@media (max-width: 1000px) {
+@media (max-width: 900px) {
   .game-layout { grid-template-columns: 1fr; }
 }
 
-.panel {
-  background: linear-gradient(180deg, var(--card), var(--card-2));
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.9rem 1rem;
-}
-.panel h2 { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.side { display: flex; flex-direction: column; gap: 0.7rem; }
 
-.players { list-style: none; margin: 0 0 0.5rem; padding: 0; }
+.players { list-style: none; margin: 0; padding: 0; }
 .player {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.3rem;
-  border-radius: 8px;
+  gap: 0.4rem;
+  padding: 0.22rem 0.35rem;
+  border-radius: 7px;
   border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  font-size: 0.86rem;
 }
-.player.active { border-color: var(--accent); background: #16281f; }
-.player.offline { opacity: 0.5; }
-.swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
-.player-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.player-meta { margin-left: auto; font-size: 0.75rem; color: var(--muted); }
+.player.active { border-color: #2c3849; border-left-color: var(--accent); background: #16281f; }
+.player.offline { opacity: 0.45; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.player-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-meta { margin-left: auto; font-size: 0.72rem; color: var(--muted); }
 .tag {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 0 0.35rem;
+  padding: 0 0.28rem;
   color: var(--muted);
+  flex: none;
 }
 
-.board-wrap { position: relative; }
+.dice-panel {
+  background: linear-gradient(180deg, var(--card), var(--card-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.7rem;
+  text-align: center;
+}
+
+/* Le plateau prend toute la largeur disponible, mais reste borné par la hauteur
+   de la fenêtre : il est carré, et sans cette limite il dépasserait l'écran et
+   forcerait à faire défiler pour voir son propre camp. */
+.board-wrap {
+  position: relative;
+  width: 100%;
+  max-width: calc(100vh - 150px);
+  margin: 0 auto;
+}
 #board {
   width: 100%;
   height: auto;
@@ -245,7 +260,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   background: var(--bg-soft);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 0.5rem;
+  padding: 0.4rem;
   box-shadow: var(--shadow);
 }
 
@@ -283,34 +298,48 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .banner small { font-weight: 400; font-size: 0.9rem; color: var(--muted); }
 
-.turn { font-weight: 600; margin: 0 0 0.8rem; }
-.dice-box { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.7rem; }
+.turn { font-weight: 600; font-size: 0.88rem; margin: 0 0 0.6rem; }
 
-/* Dé : une grille 3x3 dont on allume certains points selon la face. */
+/* Le dé est le bouton : on clique dessus pour lancer. Grille 3x3 dont on
+   allume certains points selon la face. */
 .dice {
-  width: 56px;
-  height: 56px;
-  flex: none;
+  width: 62px;
+  height: 62px;
+  margin: 0 auto;
+  padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 14px;
   background: linear-gradient(160deg, #f7fafc, #d7dfe9);
   border: 1px solid #9fb0c4;
   box-shadow: inset 0 -2px 0 rgb(0 0 0 / 12%), 0 4px 10px rgb(0 0 0 / 35%);
   transform-origin: center;
+  cursor: not-allowed;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 .dice-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
   gap: 3px;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
 }
 .pip { border-radius: 50%; background: transparent; }
 .pip.on {
   background: #1b2330;
   box-shadow: inset 0 -1px 1px rgb(255 255 255 / 35%);
+}
+
+/* À vous de jouer : le dé invite au clic. */
+.dice.ready {
+  cursor: pointer;
+  animation: dice-ready 1.6s ease-in-out infinite;
+}
+.dice.ready:hover { transform: translateY(-1px) scale(1.04); }
+@keyframes dice-ready {
+  0%, 100% { box-shadow: inset 0 -2px 0 rgb(0 0 0 / 12%), 0 0 0 3px rgb(53 196 111 / 22%), 0 4px 10px rgb(0 0 0 / 35%); }
+  50% { box-shadow: inset 0 -2px 0 rgb(0 0 0 / 12%), 0 0 0 9px rgb(53 196 111 / 10%), 0 4px 10px rgb(0 0 0 / 35%); }
 }
 
 /* Le dé tourne tant que le serveur n'a pas répondu… */
@@ -330,8 +359,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   100% { transform: scale(1) rotate(0); }
 }
 
-.dice-box .primary { width: auto; flex: 1; }
-
 /* Zone du joueur dont c'est le tour : la base concernée s'illumine. */
 .base-turn {
   stroke: #ffffff;
@@ -346,11 +373,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Cases de départ : colorées au nom du joueur, avec leur étoile blanche. */
 .cell.start { stroke: #0d1117; stroke-width: 0.05; }
-
-.log { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; color: var(--muted); }
-.log li { padding: 0.2rem 0; border-bottom: 1px dashed #2a3546; }
-.log li:last-child { border-bottom: 0; }
-.log li.strong { color: var(--text); }
 
 /* ---------- règles ---------- */
 

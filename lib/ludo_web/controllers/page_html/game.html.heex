@@ -9,35 +9,32 @@
   </header>
 
   <div class="game-layout">
-    <aside class="panel">
-      <h2>Joueurs</h2>
-      <ul class="players" id="players"></ul>
-    </aside>
-
     <div class="board-wrap">
       <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Plateau de Ludo"></svg>
       <div class="banner" id="banner" hidden></div>
     </div>
 
-    <aside class="panel">
-      <h2>Tour en cours</h2>
-      <p class="turn" id="turn">En attente…</p>
+    <aside class="side">
+      <ul class="players" id="players"></ul>
 
-      <div class="dice-box">
-        <div class="dice" id="dice" aria-live="polite">–</div>
-        <button id="roll" class="primary" type="button" disabled>Lancer le dé</button>
-      </div>
+      <div class="dice-panel">
+        <p class="turn" id="turn">En attente…</p>
 
-      <p class="hint" id="hint"></p>
+        <button
+          class="dice"
+          id="dice"
+          type="button"
+          aria-live="polite"
+          aria-label="Lancer le dé"
+          disabled
+        ></button>
 
-      <div class="actions" id="host-actions" hidden>
-        <button id="fill-bots" class="secondary" type="button">
-          Compléter avec des IA et démarrer
+        <p class="hint" id="hint"></p>
+
+        <button id="fill-bots" class="secondary small" type="button" hidden>
+          Compléter avec des IA
         </button>
       </div>
-
-      <h2>Journal</h2>
-      <ul class="log" id="log"></ul>
     </aside>
   </div>
 

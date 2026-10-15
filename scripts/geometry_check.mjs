@@ -463,8 +463,31 @@ section("Le dé");
 const dice = elementFor("#dice");
 api.renderState(syntheticState({ dice: 5, legal_moves: [0] }));
 
+// Le dé est le bouton de lancer : il ne doit être actif que lorsqu'on peut
+// réellement lancer, c'est-à-dire à son tour et avant d'avoir lancé.
+// (Que ce soit bien un <button> dans la page est vérifié côté Elixir, dans
+// page_controller_test.exs : le DOM factice ne connaît pas la balise réelle.)
+
+api.renderState(
+  syntheticState({ dice: null, legal_moves: [], turn_color: geo.players[0] })
+);
+check("à son tour, dé non lancé : le dé est actif", dice.disabled === false, dice.disabled);
+check("le dé actif invite au clic", dice.classList.contains("ready") === true);
+
+api.renderState(
+  syntheticState({ dice: null, legal_moves: [], turn_color: geo.players[1] })
+);
+check("au tour d'un autre : le dé est inactif", dice.disabled === true, dice.disabled);
+check("le dé inactif n'invite pas au clic", dice.classList.contains("ready") === false);
+
+api.renderState(
+  syntheticState({ dice: 4, legal_moves: [], turn_color: geo.players[0] })
+);
+check("dé déjà lancé : le dé est inactif", dice.disabled === true, dice.disabled);
+
 // Les points sont dans l'ordre 0..8 d'une grille 3x3 : un 5 allume les quatre
 // coins et le centre.
+api.renderState(syntheticState({ dice: 5, legal_moves: [0] }));
 const pipEls = dice.allDescendants().filter((el) => el.classList.contains("pip"));
 const litIndexes = pipEls
   .map((el, i) => (el.classList.contains("on") ? i : -1))

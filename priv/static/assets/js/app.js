@@ -266,7 +266,14 @@
       })
       .receive("timeout", () => toast("Le serveur ne répond pas."));
 
-    $("#roll").addEventListener("click", () => {
+    // Le dé lui-même est le bouton : on clique dessus pour lancer.
+    const diceButton = $("#dice");
+
+    diceButton.addEventListener("click", () => {
+      // on ne lance que si c'est possible (le bouton est désactivé sinon, mais
+      // on se protège aussi ici)
+      if (diceButton.disabled) return;
+
       // le dé tourne immédiatement ; il s'arrêtera sur la valeur du serveur
       startSpin();
 
@@ -275,6 +282,14 @@
         stopSpin(reply.state.dice);
         renderState(reply.state);
       });
+    });
+
+    // au clavier : Entrée ou Espace sur le dé
+    diceButton.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        diceButton.click();
+      }
     });
 
     $("#fill-bots").addEventListener("click", () => {
@@ -454,7 +469,6 @@
     renderPlayers(state);
     renderActiveBase(state);
     renderTurn(state);
-    renderLog(state);
     renderBanner(state);
     renderTokens(state);
   }
@@ -502,25 +516,26 @@
   function renderTurn(state) {
     const turn = $("#turn");
     const dice = $("#dice");
-    const roll = $("#roll");
     const hint = $("#hint");
-    const hostActions = $("#host-actions");
+    const fillBots = $("#fill-bots");
 
     if (state.status === "waiting") {
       turn.textContent = "En attente de joueurs…";
-      roll.disabled = true;
+      dice.disabled = true;
+      dice.classList.remove("ready");
       hint.textContent = "La partie démarre dès que tous les sièges sont pris.";
-      hostActions.hidden = mySeat !== 0;
+      fillBots.hidden = mySeat !== 0;
       settleDice(null);
       return;
     }
 
-    hostActions.hidden = true;
+    fillBots.hidden = true;
 
     if (state.status === "finished") {
       const winner = state.players.find((p) => p.color === state.winner);
       turn.textContent = "Partie terminée";
-      roll.disabled = true;
+      dice.disabled = true;
+      dice.classList.remove("ready");
       hint.textContent = winner ? winner.name + " remporte la partie." : "";
       settleDice(null);
       return;
@@ -539,14 +554,18 @@
 
     lastDice = state.dice;
 
-    roll.disabled = !(mine && state.dice === null);
+    // Le dé est le bouton : actif seulement quand c'est à nous et qu'il n'a pas
+    // encore été lancé.
+    const canRoll = mine && state.dice === null;
+    dice.disabled = !canRoll;
+    dice.classList.toggle("ready", canRoll);
 
     if (!mine) {
       hint.textContent = "";
-    } else if (state.dice === null) {
-      hint.textContent = "Lancez le dé.";
+    } else if (canRoll) {
+      hint.textContent = "Cliquez sur le dé pour lancer.";
     } else if (state.legal_moves.length > 0) {
-      hint.textContent = "Cliquez sur un pion en surbrillance pour le déplacer.";
+      hint.textContent = "Cliquez sur un pion en surbrillance.";
     } else {
       hint.textContent = "Aucun coup possible avec ce dé.";
     }
@@ -637,21 +656,6 @@
     for (const color in baseEls) {
       const active = state.status === "playing" && state.turn_color === color;
       baseEls[color].classList.toggle("base-turn", active);
-    }
-  }
-
-  function renderLog(state) {
-    const log = $("#log");
-    if (!log) return;
-    log.innerHTML = "";
-
-    for (const entry of state.log.slice().reverse()) {
-      const li = document.createElement("li");
-      li.textContent = entry.text || "";
-      if (entry.type === "captured" || entry.type === "won" || entry.type === "triple_six") {
-        li.classList.add("strong");
-      }
-      log.appendChild(li);
     }
   }
 
