@@ -167,6 +167,11 @@ Quelques partis pris qui expliquent la structure :
   nœuds SVG : les déplacements de pions, le roulement du dé et les pulsations
   sont animés image par image, sans reflow. La vue est orthographique et
   verticale, donc le rendu reste celui d'un plateau 2D classique.
+* **La visée au doigt est large.** Un pion ne fait qu'une douzaine de pixels sur
+  un téléphone. Chacun porte donc une zone de touche invisible élargie, et un
+  appui près d'un pion jouable le sélectionne (tolérance d'environ 40 px de
+  cible). Un pion non jouable ne peut jamais intercepter le geste destiné à son
+  voisin, et un glissement n'est pas un appui.
 
 ### Three.js
 
@@ -194,7 +199,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
 node scripts/geometry_check.mjs /tmp/geometry.json   # 48 vérifications : panneau, camps, dé
-node scripts/three_check.mjs /tmp/geometry.json      # 79 vérifications : scène, cadrage, dés, clic
+node scripts/three_check.mjs /tmp/geometry.json      # 88 vérifications : scène, cadrage, dés, clic, doigt
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)
 node scripts/dump_board_top.mjs /tmp/geometry.json /tmp/board_top.json

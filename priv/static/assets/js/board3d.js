@@ -31,6 +31,20 @@ const STEP_MS = 130; // durée d'un déplacement d'une case
 const JUMP_MS = 420; // durée d'un saut (sortie de base, capture)
 const HOP = 0.34; // hauteur d'un petit bond
 const SPREAD = 0.17; // écartement de plusieurs pions sur une même case
+
+// Rayon de la zone de touche d'un pion. Un doigt couvre environ 9 mm : à
+// l'échelle du plateau (15 cases pour un téléphone d'environ 360 px), il faut
+// viser large pour que le pion soit attrapable.
+const HIT_R = 0.85;
+
+// Tolérance de visée, en coordonnées écran (-1 à 1). Un doigt couvre environ
+// 9 mm : sur un téléphone de 360 px de large, il faut 40 px de cible, soit une
+// tolérance de 0,11. On prend un peu plus.
+const SNAP_NDC = 0.12;
+
+// Déplacement en pixels au-delà duquel un appui n'est plus considéré comme un
+// tap (le doigt tremble toujours un peu).
+const TAP_TOLERANCE = 14;
 // Le dé est posé sous le plateau. En vue de dessus il paraîtrait minuscule à sa
 // taille d'origine : il est dimensionné par rapport au plateau.
 // Un dé par joueur, posé en diagonale à l'extérieur de son camp. Le dé d'un
@@ -515,8 +529,27 @@ function buildTokens() {
       ring.position.y = 0.02;
       ring.visible = false;
 
-      group.add(body, head, ring);
-      group.userData = { kind: "token", color, index, ring, position: null, path: [], hop: 0 };
+      // Zone de touche élargie : sur un téléphone un pion ne fait qu'une
+      // douzaine de pixels, bien en dessous de ce qu'un doigt peut viser. Ce
+      // disque invisible sert uniquement au raycast.
+      const hit = new THREE.Mesh(
+        new THREE.CylinderGeometry(HIT_R, HIT_R, 0.9, 16),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0 })
+      );
+      hit.position.y = 0.45;
+      hit.userData = { kind: "hit" };
+
+      group.add(body, head, ring, hit);
+      group.userData = {
+        kind: "token",
+        color,
+        index,
+        ring,
+        hit,
+        position: null,
+        path: [],
+        hop: 0
+      };
       tokensGroup.add(group);
       tokenNodes.set(color + ":" + index, group);
     }
@@ -799,6 +832,34 @@ function loop() {
  * Chaque joueur a son dé : seul celui du joueur en cours déclenche un lancer.
  * Renvoie ce qui a été touché, ce qui rend le comportement vérifiable.
  */
+/**
+ * Pion jouable le plus proche d'un point de l'écran, dans la limite de la
+ * tolérance de visée.
+ *
+ * Au doigt, exiger que le rayon touche exactement le pion est trop sévère : on
+ * accepte donc un pion jouable proche du point touché. Seuls les pions
+ * réellement jouables sont candidats, ce qui évite tout coup involontaire.
+ */
+function nearestPlayableToken(ndcX, ndcY) {
+  let meilleur = null;
+  let distance = SNAP_NDC;
+  const point = new THREE.Vector3();
+
+  for (const node of tokenNodes.values()) {
+    if (!node.userData.ring.visible) continue;
+
+    node.getWorldPosition(point).project(camera);
+    const d = Math.hypot(point.x - ndcX, point.y - ndcY);
+
+    if (d < distance) {
+      distance = d;
+      meilleur = node;
+    }
+  }
+
+  return meilleur;
+}
+
 function activate(ndcX, ndcY) {
   // Les matrices monde sont normalement à jour grâce au rendu de la frame
   // précédente : on s'en assure, sans quoi un clic arrivé avant le premier
@@ -815,13 +876,27 @@ function activate(ndcX, ndcY) {
   }
 
   const hits = raycaster.intersectObjects([...tokenNodes.values()], true);
-  if (hits.length) {
-    let node = hits[0].object;
+
+  // Tous les pions touchés, sans doublon : les zones de touche se chevauchent
+  // quand deux pions partagent une case.
+  const touches = [];
+
+  for (const hit of hits) {
+    let node = hit.object;
     while (node && !node.userData.color) node = node.parent;
-    if (node && node.userData.ring.visible && handlers.token) {
-      handlers.token(node.userData.index);
-      return "token:" + node.userData.color + ":" + node.userData.index;
-    }
+    if (node && !touches.includes(node)) touches.push(node);
+  }
+
+  // Un pion jouable passe avant tout autre : sans cela, la zone élargie d'un
+  // pion immobile intercepterait le geste destiné à son voisin.
+  let node = touches.find((n) => n.userData.ring.visible) || null;
+
+  // à défaut, le pion jouable le plus proche du point touché
+  if (!node) node = nearestPlayableToken(ndcX, ndcY);
+
+  if (node && node.userData.ring.visible && handlers.token) {
+    handlers.token(node.userData.index);
+    return "token:" + node.userData.color + ":" + node.userData.index;
   }
 
   return null;
@@ -852,15 +927,47 @@ export function clickAt(ndcX, ndcY) {
   return activate(ndcX, ndcY);
 }
 
+/** Rayon de la zone de touche d'un pion (vérifications). */
+export function hitRadius() {
+  return HIT_R;
+}
+
+/** Tolérance de visée au doigt, en coordonnées écran (vérifications). */
+export function snapTolerance() {
+  return SNAP_NDC;
+}
+
 /** Distance d'un dé au centre du plateau. */
 export function diceOffset() {
   return DICE_OFFSET;
 }
 
 function bindInput(canvas) {
-  // Vue de dessus : le plateau ne tourne pas. Un clic vise un pion ou le dé.
-  canvas.addEventListener("click", (event) => {
+  // Vue de dessus : le plateau ne tourne pas. On repère un TAP plutôt qu'un
+  // `click` : sur mobile, le clic arrive avec un retard et se perd si le doigt
+  // bouge un peu. Un glissement n'est pas un tap.
+  let depart = null;
+
+  canvas.addEventListener("pointerdown", (event) => {
+    depart = { x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture?.(event.pointerId);
+  });
+
+  canvas.addEventListener("pointerup", (event) => {
+    const origine = depart;
+    depart = null;
+
+    canvas.releasePointerCapture?.(event.pointerId);
+    if (!origine) return;
+
+    const glissement = Math.hypot(event.clientX - origine.x, event.clientY - origine.y);
+    if (glissement > TAP_TOLERANCE) return; // c'était un glissement
+
     pick(event);
+  });
+
+  canvas.addEventListener("pointercancel", () => {
+    depart = null;
   });
 
   canvas.addEventListener(

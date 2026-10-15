@@ -860,6 +860,103 @@ check("un clic à côté ne déclenche rien", vide === null, vide);
 check("le dé jaune est à son coin", board.diceAt(coinJaune.x, coinJaune.y) === "yellow");
 check("le dé vert est à son coin", board.diceAt(coinVert.x, coinVert.y) === "green");
 
+/* ------------------------------------------------- viser un pion au doigt */
+
+section("Viser un pion au doigt");
+
+{
+
+// Sur un téléphone, un pion ne fait qu'une douzaine de pixels : sans zone de
+// touche élargie, il est impossible à attraper. On mesure la taille de la
+// cibleDoigt sur un écran de 360 px de large.
+const demiEcran = board.viewLimits().half;
+// La cible effective est la plus grande des deux : le maillage élargi, et la
+// tolérance de visée qui accepte un pion jouable proche du point touché.
+const cibleDoigtPx =
+  Math.max((board.hitRadius() * 2) / (2 * demiEcran), board.snapTolerance() * 2) * 360;
+check(
+  "la cibleDoigt d'un pion atteint la taille d'un doigt (40 px)",
+  cibleDoigtPx >= 40,
+  Math.round(cibleDoigtPx) + " px"
+);
+
+// deux pions sur la même case, un seul jouable : le doigt doit choisir le bon
+board.update(
+  etatDe({
+    dice: 6,
+    turn_color: geo.players[0],
+    legal_moves: [1],
+    players: geo.players.map((color, seat) => ({
+      color,
+      seat,
+      tokens: seat === 0 ? [5, 5, "base", "base"] : ["base", "base", "base", "base"]
+    }))
+  }),
+  geo.players[0]
+);
+board.stepFrames(200);
+board.setView({ zoom: limites.minZoom });
+
+let choisi = null;
+board.setHandlers({ roll: () => (choisi = "de"), token: (i) => (choisi = i) });
+
+const cibleDoigt = board.tokenWorldPosition(geo, "red", 1, 5);
+const centreDoigt = board.project({ x: cibleDoigt.x, y: 0, z: cibleDoigt.z });
+
+function vise(dx, dy) {
+  choisi = null;
+  board.clickAt(centreDoigt.x + dx, centreDoigt.y + dy);
+  return choisi;
+}
+
+check("un appui pile sur le pion le joue", vise(0, 0) === 1, vise(0, 0));
+check(
+  "un appui à 8 % du pion le joue quand même",
+  vise(-0.08, 0) === 1,
+  vise(-0.08, 0)
+);
+check("un appui nettement à côté ne joue rien", vise(-0.3, 0) === null, vise(-0.3, 0));
+check(
+  "un appui juste au-delà de la tolérance ne joue rien",
+  vise(board.snapTolerance() + 0.04, 0) === null,
+  vise(board.snapTolerance() + 0.04, 0)
+);
+
+// le pion immobile qui partage la case ne doit pas intercepter le geste
+check(
+  "le pion non jouable ne vole pas le geste de son voisin",
+  vise(-0.05, 0) === 1,
+  vise(-0.05, 0)
+);
+
+// deux pions jouables sur des cases différentes : on joue celui qu'on vise
+board.update(
+  etatDe({
+    dice: 6,
+    turn_color: geo.players[0],
+    legal_moves: [0, 1],
+    players: geo.players.map((color, seat) => ({
+      color,
+      seat,
+      tokens: seat === 0 ? [2, 30, "base", "base"] : ["base", "base", "base", "base"]
+    }))
+  }),
+  geo.players[0]
+);
+board.stepFrames(300);
+
+const pionsPremier = board.tokenWorldPosition(geo, "red", 0, 2);
+const pionsSecond = board.tokenWorldPosition(geo, "red", 1, 30);
+const p0 = board.project({ x: pionsPremier.x, y: 0, z: pionsPremier.z });
+const p1 = board.project({ x: pionsSecond.x, y: 0, z: pionsSecond.z });
+
+check("on joue le pion visé (le premier)", vise.call(null, p0.x - centreDoigt.x, p0.y - centreDoigt.y) === 0);
+
+choisi = null;
+board.clickAt(p1.x, p1.y);
+check("on joue le pion visé (le second)", choisi === 1, choisi);
+}
+
 /* ----------------------------------------------------------------- résultat */
 
 console.log("\n== Résultat ==");

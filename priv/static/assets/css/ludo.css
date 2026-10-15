@@ -306,6 +306,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   /* le plateau est interactif (pions, dé) mais ne tourne plus */
   touch-action: none;
   cursor: pointer;
+  /* au doigt : pas de surbrillance bleue ni de sélection accidentelle, et pas
+     de zoom double-tap qui volerait le geste */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .webgl-error {
