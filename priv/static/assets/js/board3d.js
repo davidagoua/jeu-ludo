@@ -20,26 +20,28 @@ const CENTER_CELL = (BOARD - 1) / 2; // 7
 const TILE_H = 0.18;
 const TOP = TILE_H; // surface supérieure des cases
 const TOKEN_R = 0.34;
-const FOV = 42; // champ de vision vertical
-// Une vue trop rasante rapproche le bord proche du plateau et oblige à
-// reculer énormément la caméra, ce qui rétrécit le plateau : on garde une
-// plongée d'au moins 29°.
-const MIN_ELEVATION = 0.5;
-const MAX_ELEVATION = 1.45; // plongée maximale (vue du dessus)
-// Fraction du cadre qu'on s'autorise à occuper.
-const FRAME_LIMIT = 0.94;
-const ZOOM_MAX = 1.6; // marge d'éloignement offerte à la molette
-// La distance de caméra est cherchée par dichotomie (voir `fittedRadius`) : une
-// formule « largeur / (2 tan(fov/2)) » ignore que les coins proches sont plus
-// près de la caméra, et surtout que le plateau vu de biais se présente par sa
-// diagonale — elle laissait le plateau rogné.
+// Vue 2D : caméra orthographique pile au-dessus du plateau. Il n'y a donc ni
+// perspective ni plongée à régler — le cadre se déduit du plateau et de la
+// rangée du dé, ce qui garantit qu'il n'est jamais rogné.
+const ZOOM_MIN = 1; // 1 = le plateau remplit le cadre
+const ZOOM_MAX = 2.2; // marge d'éloignement offerte à la molette
+const FRAME_MARGIN = 0.7; // marge autour du plateau
 
 const STEP_MS = 130; // durée d'un déplacement d'une case
 const JUMP_MS = 420; // durée d'un saut (sortie de base, capture)
 const HOP = 0.34; // hauteur d'un petit bond
+// Le dé est posé sous le plateau. En vue de dessus il paraîtrait minuscule à sa
+// taille d'origine : il est dimensionné par rapport au plateau.
+const DICE_SIZE = 1.5;
 const DICE_X = 0;
-const DICE_Y = 1.3;
-const DICE_Z = BOARD / 2 + 1.4; // juste au-delà du bord du plateau
+const DICE_Y = DICE_SIZE / 2 + 0.03;
+const DICE_Z = BOARD / 2 + 0.4 + DICE_SIZE / 2;
+
+// Étendue à couvrir : le plateau, puis la rangée du dé sous le plateau.
+const VIEW_TOP = -(BOARD / 2 + FRAME_MARGIN);
+const VIEW_BOTTOM = DICE_Z + DICE_SIZE / 2 + 0.45;
+const VIEW_HALF = Math.max(VIEW_BOTTOM - VIEW_TOP, BOARD + 2 * FRAME_MARGIN) / 2;
+const VIEW_CENTER_Z = (VIEW_TOP + VIEW_BOTTOM) / 2;
 
 /* ------------------------------------------------------- fonctions pures */
 
@@ -181,83 +183,39 @@ let activeBase = { color: null, t: 0 };
 let lastFrame = 0;
 let raycaster = null;
 let pointer = new THREE.Vector2();
-let orbit = { azimuth: 0, elevation: 0.95, zoom: 1 };
+// Vue 2D : ni rotation ni plongée, seulement un facteur de zoom.
+let view = { zoom: 1 };
 
-// Points qui doivent rester dans le cadre : le plateau (un peu au-dessus des
-// pions) et le dé.
-function framePoints() {
+/** Points qui doivent rester dans le cadre (sert aux vérifications). */
+export function framePoints() {
   return [
-    [-BOARD / 2, 0.7, -BOARD / 2],
-    [BOARD / 2, 0.7, -BOARD / 2],
-    [-BOARD / 2, 0.7, BOARD / 2],
-    [BOARD / 2, 0.7, BOARD / 2],
-    [DICE_X, DICE_Y + 0.55, DICE_Z],
-    [DICE_X, DICE_Y + 0.55, DICE_Z - 0.9]
+    [-BOARD / 2, 0, -BOARD / 2],
+    [BOARD / 2, 0, -BOARD / 2],
+    [-BOARD / 2, 0, BOARD / 2],
+    [BOARD / 2, 0, BOARD / 2],
+    [DICE_X, 0, VIEW_BOTTOM] // bas de la rangée du dé
   ];
 }
 
-function placeCamera(radius, elevation, azimuth) {
-  camera.position.set(
-    radius * Math.sin(azimuth) * Math.cos(elevation),
-    radius * Math.sin(elevation),
-    radius * Math.cos(azimuth) * Math.cos(elevation)
-  );
-  camera.lookAt(0, 0, 0);
+/**
+ * Place la caméra : orthographique, pile au-dessus, orientée pour que la ligne 0
+ * du plateau (z négatif) s'affiche en haut, comme sur le plateau 2D.
+ */
+function updateCamera() {
+  const half = VIEW_HALF * view.zoom;
+
+  camera.left = -half;
+  camera.right = half;
+  camera.top = half;
+  camera.bottom = -half;
+
+  camera.position.set(0, 60, VIEW_CENTER_Z);
+  camera.up.set(0, 0, -1);
+  camera.lookAt(0, 0, VIEW_CENTER_Z);
+  camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
 }
 
-function fitsAt(radius, elevation, azimuth) {
-  placeCamera(radius, elevation, azimuth);
-
-  return framePoints().every(([x, y, z]) => {
-    const v = new THREE.Vector3(x, y, z).project(camera);
-    return Math.abs(v.x) <= FRAME_LIMIT && Math.abs(v.y) <= FRAME_LIMIT;
-  });
-}
-
-/**
- * Distance de caméra qui cadre tout le plateau pour un angle donné.
- *
- * Recalculée quand l'angle change : vu de biais — et surtout à 45°, où le
- * plateau se présente par sa diagonale (10,6 unités au lieu de 7,5) — il faut
- * reculer bien plus loin que de face. Une distance fixe obligeait donc à choisir
- * entre rogner le plateau ou le rétrécir inutilement.
- */
-function fittedRadius(elevation, azimuth) {
-  let lo = 4;
-  let hi = 200;
-
-  for (let i = 0; i < 26; i++) {
-    const mid = (lo + hi) / 2;
-    if (fitsAt(mid, elevation, azimuth)) hi = mid;
-    else lo = mid;
-  }
-
-  return hi;
-}
-
-let fitCache = { elevation: null, azimuth: null, radius: 0 };
-
-function currentFit() {
-  if (
-    fitCache.elevation !== null &&
-    Math.abs(fitCache.elevation - orbit.elevation) < 1e-4 &&
-    Math.abs(fitCache.azimuth - orbit.azimuth) < 1e-4
-  ) {
-    return fitCache.radius;
-  }
-
-  const radius = fittedRadius(orbit.elevation, orbit.azimuth);
-  fitCache = { elevation: orbit.elevation, azimuth: orbit.azimuth, radius };
-  return radius;
-}
-
-function updateCamera() {
-  placeCamera(currentFit() * orbit.zoom, orbit.elevation, orbit.azimuth);
-}
-
-let dragging = false;
-let lastPointer = { x: 0, y: 0 };
 let handlers = { roll: null, token: null };
 let ready = false;
 
@@ -414,7 +372,8 @@ function buildDice(color = "#f7fafc") {
   dicePivot = new THREE.Group();
   diceGroup.add(dicePivot);
 
-  const size = 0.78;
+  const size = DICE_SIZE;
+  const k = size / 0.78; // les décalages ci-dessous sont donnés pour un dé de 0,78
   const cube = new THREE.Mesh(
     new THREE.BoxGeometry(size, size, size),
     material(color, { roughness: 0.35, metalness: 0.02 })
@@ -442,11 +401,13 @@ function buildDice(color = "#f7fafc") {
 
   for (const [, pips, normal, face] of layout) {
     for (const [u, v] of pips) {
-      const pip = new THREE.Mesh(new THREE.SphereGeometry(0.062, 12, 10), pipMat);
+      const pip = new THREE.Mesh(new THREE.SphereGeometry(0.062 * k, 12, 10), pipMat);
       // on place le point dans le plan de sa face
-      if (face[0] !== 0) pip.position.set(normal[0], v, -u);
-      else if (face[1] !== 0) pip.position.set(u, normal[1], v);
-      else pip.position.set(u, v, normal[2]);
+      const pu = u * k;
+      const pv = v * k;
+      if (face[0] !== 0) pip.position.set(normal[0], pv, -pu);
+      else if (face[1] !== 0) pip.position.set(pu, normal[1], pv);
+      else pip.position.set(pu, pv, normal[2]);
       pip.userData = { kind: "pip" };
       dicePivot.add(pip);
     }
@@ -536,13 +497,19 @@ function stepAnimations(dt) {
 
     node.position.x = from.x + (to.x - from.x) * ease;
     node.position.z = from.z + (to.z - from.z) * ease;
-    node.position.y = TOP + Math.sin(k * Math.PI) * HOP;
+
+    // Vue de dessus oblige : monter un pion ne se voit pas. Le bond se lit donc
+    // par un grossissement passager, et par l'ombre portée qui s'écarte.
+    const bond = Math.sin(k * Math.PI);
+    node.position.y = TOP + bond * HOP;
+    node.scale.setScalar(1 + bond * 0.3);
 
     if (k >= 1) {
       anim.step++;
       anim.t = 0;
       if (anim.step >= anim.path.length) {
         node.position.set(to.x, to.y ?? TOP, to.z);
+        node.scale.setScalar(1);
         animations.splice(i, 1);
       }
     }
@@ -652,7 +619,7 @@ function render(dt) {
     } else {
       dicePivot.quaternion.slerp(dice.target, Math.min(1, dt * 9));
     }
-    diceGroup.position.y = DICE_Y + Math.sin(performance.now() / 700) * 0.06;
+    diceGroup.position.y = DICE_Y + Math.sin(performance.now() / 700) * 0.05;
   }
 
   // pulsation de la base du joueur dont c'est le tour
@@ -719,27 +686,7 @@ function pick(event) {
 }
 
 function bindInput(canvas) {
-  canvas.addEventListener("pointerdown", (event) => {
-    dragging = true;
-    lastPointer = { x: event.clientX, y: event.clientY };
-    canvas.setPointerCapture(event.pointerId);
-  });
-
-  canvas.addEventListener("pointerup", (event) => {
-    dragging = false;
-    canvas.releasePointerCapture?.(event.pointerId);
-  });
-
-  canvas.addEventListener("pointermove", (event) => {
-    if (!dragging) return;
-    orbit.azimuth -= (event.clientX - lastPointer.x) * 0.006;
-    orbit.elevation = Math.max(
-      MIN_ELEVATION,
-      Math.min(MAX_ELEVATION, orbit.elevation + (event.clientY - lastPointer.y) * 0.005)
-    );
-    lastPointer = { x: event.clientX, y: event.clientY };
-  });
-
+  // Vue de dessus : le plateau ne tourne pas. Un clic vise un pion ou le dé.
   canvas.addEventListener("click", (event) => {
     pick(event);
   });
@@ -749,7 +696,8 @@ function bindInput(canvas) {
     (event) => {
       event.preventDefault();
       // 1 = cadrage au plus près : on ne peut que s'éloigner, jamais rogner
-      orbit.zoom = Math.max(1, Math.min(ZOOM_MAX, orbit.zoom + event.deltaY * 0.0015));
+      view.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, view.zoom + event.deltaY * 0.0015));
+      updateCamera();
     },
     { passive: false }
   );
@@ -772,7 +720,7 @@ export function buildScene(nextGeo) {
     scene = new THREE.Scene();
     scene.background = new THREE.Color("#0f141c");
 
-    camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
     root = new THREE.Group();
     scene.add(root);
 
@@ -859,20 +807,25 @@ export function diceValue() {
 }
 
 /** Déplace la caméra (sert aux vérifications et à un futur bouton de recadrage). */
-export function setOrbit(next) {
-  Object.assign(orbit, next);
-  fitCache = { elevation: null, azimuth: null, radius: 0 };
+export function setView(next) {
+  Object.assign(view, next);
+  updateCamera();
 }
 
 /** Rayon de caméra minimal qui ne rogne pas le plateau. */
-/** Rayon de caméra réellement utilisé. */
-export function currentRadius() {
-  return currentFit() * orbit.zoom;
+/** Demi-hauteur du cadre visible, zoom compris. */
+export function viewHalf() {
+  return VIEW_HALF * view.zoom;
+}
+
+/** z sur lequel le cadre est centré (le plateau n'est pas centré : le dé est en dessous). */
+export function viewCenterZ() {
+  return VIEW_CENTER_Z;
 }
 
 /** Bornes offertes au joueur (pour les vérifications). */
 export function viewLimits() {
-  return { minElevation: MIN_ELEVATION, maxElevation: MAX_ELEVATION, maxZoom: ZOOM_MAX };
+  return { minZoom: ZOOM_MIN, maxZoom: ZOOM_MAX, half: VIEW_HALF };
 }
 
 /** Anneaux de surbrillance actuellement visibles, pour les vérifications. */

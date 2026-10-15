@@ -490,77 +490,90 @@ check(
 
 /* ------------------------------------------------------------- cadrage */
 
-section("Cadrage de la caméra");
-
-// Le plateau est un carré de 15 unités : mal cadré, il est rogné et on ne voit
-// plus son propre camp. Vu de biais — et à 45°, où il se présente par sa
-// diagonale — il occupe bien plus de place, d'où une distance adaptative.
-const coins = [
-  { x: -7.5, y: 0, z: -7.5 },
-  { x: 7.5, y: 0, z: -7.5 },
-  { x: -7.5, y: 0, z: 7.5 },
-  { x: 7.5, y: 0, z: 7.5 }
-];
+section("Cadrage et vue 2D");
 
 const limites = board.viewLimits();
-const elevations = [limites.minElevation, 0.95, limites.maxElevation];
-const azimuths = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
 
+// Tous les points à couvrir (le plateau et la rangée du dé) doivent tenir dans
+// le cadre, au zoom le plus proche comme au plus éloigné.
 let cadreOk = true;
-let pire = 0;
-let rayonMin = Infinity;
-let rayonMax = 0;
-
-for (const elevation of elevations) {
-  for (const azimuth of azimuths) {
-    board.setOrbit({ elevation, azimuth, zoom: 1 });
-    const rayon = board.currentRadius();
-    rayonMin = Math.min(rayonMin, rayon);
-    rayonMax = Math.max(rayonMax, rayon);
-
-    for (const coin of coins) {
-      const p = board.project(coin);
-      const m = Math.max(Math.abs(p.x), Math.abs(p.y));
-      if (m > pire) pire = m;
-
-      if (m > 1) {
-        cadreOk = false;
-        console.log(
-          "    coin " + JSON.stringify(coin) + " à " + elevation + "/" + azimuth.toFixed(2) +
-            " -> " + p.x.toFixed(2) + "," + p.y.toFixed(2)
-        );
-      }
+for (const zoom of [limites.minZoom, limites.maxZoom]) {
+  board.setView({ zoom });
+  for (const [x, y, z] of board.framePoints()) {
+    const p = board.project({ x, y, z });
+    // les points de conception touchent le bord du cadre par construction :
+    // on tolère l'arrondi, l'important est qu'ils ne soient pas coupés
+    if (Math.abs(p.x) > 1 + 1e-6 || Math.abs(p.y) > 1 + 1e-6) {
+      cadreOk = false;
+      console.log(
+        "    zoom " + zoom + " : " + JSON.stringify([x, y, z]) + " -> " + p.x.toFixed(2) + "," + p.y.toFixed(2)
+      );
     }
   }
 }
+check("le plateau et le dé tiennent dans le cadre à tout zoom", cadreOk);
 
-check("les quatre coins du plateau restent cadrés à toute rotation", cadreOk, pire.toFixed(3));
-check("le cadrage remplit le cadre sans le déborder", pire > 0.85 && pire <= 0.98, pire.toFixed(3));
+// Le zoom minimal doit réellement remplir le cadre, pas laisser le plateau
+// perdu au milieu.
+board.setView({ zoom: limites.minZoom });
+let proche = 0;
+for (const [x, y, z] of board.framePoints()) {
+  const p = board.project({ x, y, z });
+  proche = Math.max(proche, Math.abs(p.x), Math.abs(p.y));
+}
+check("au zoom minimal, le cadre est bien rempli", proche > 0.85, proche.toFixed(3));
+
+/* --- la vue doit être plate et de dessus, pas une perspective --- */
+
+// 1. sans perspective, deux longueurs égales dans le monde restent égales à
+//    l'écran, où qu'elles soient
+board.setView({ zoom: limites.minZoom });
+const coinHautGauche = board.project({ x: -7.5, y: 0, z: -7.5 });
+const coinHautDroit = board.project({ x: 7.5, y: 0, z: -7.5 });
+const coinBasGauche = board.project({ x: -7.5, y: 0, z: 7.5 });
+const largeur = coinHautDroit.x - coinHautGauche.x;
+const hauteur = coinHautGauche.y - coinBasGauche.y;
+
 check(
-  "la distance de caméra s'adapte à l'angle (diagonale plus lointaine)",
-  rayonMax - rayonMin > 2,
-  { min: Number(rayonMin.toFixed(1)), max: Number(rayonMax.toFixed(1)) }
+  "la vue est orthographique (le plateau est un carré à l'écran)",
+  Math.abs(largeur - hauteur) < 1e-6,
+  { largeur: largeur.toFixed(4), hauteur: hauteur.toFixed(4) }
 );
 
-// s'éloigner ne doit jamais rogner : le zoom ne descend pas sous le cadrage
-board.setOrbit({ elevation: 0.95, azimuth: Math.PI / 4, zoom: limites.maxZoom });
-let eloigneOk = true;
-for (const coin of coins) {
-  const p = board.project(coin);
-  if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) eloigneOk = false;
-}
-check("s'éloigner garde tout le plateau dans le cadre", eloigneOk);
-
-// le dé doit rester visible et cliquable
-board.setOrbit({ elevation: 0.95, azimuth: 0, zoom: 1 });
-const diceProjection = board.project({ x: 0, y: 1.9, z: 8.9 });
+// 2. la vue est de dessus : la ligne 0 du plateau s'affiche en haut
+const haut = board.project({ x: 0, y: 0, z: -7 });
+const bas = board.project({ x: 0, y: 0, z: 7 });
 check(
-  "le dé est dans le cadre",
-  Math.abs(diceProjection.x) < 1 && Math.abs(diceProjection.y) < 1,
+  "la ligne 0 du plateau s'affiche en haut",
+  haut.y > bas.y && Math.abs(haut.x) < 1e-6,
+  { haut: haut.y.toFixed(3), bas: bas.y.toFixed(3) }
+);
+
+// 3. et de gauche à droite dans le bon sens
+const gauche = board.project({ x: -7, y: 0, z: 0 });
+const droite = board.project({ x: 7, y: 0, z: 0 });
+check("la colonne 0 s'affiche à gauche", gauche.x < droite.x, {
+  gauche: gauche.x.toFixed(3),
+  droite: droite.x.toFixed(3)
+});
+
+// 4. la hauteur ne doit pas décaler un pion : vu de dessus, monter ne change
+//    pas la position à l'écran (c'est le grossissement qui fait le bond)
+const pose = board.project({ x: 2, y: 0, z: 3 });
+const enLair = board.project({ x: 2, y: 0.5, z: 3 });
+check(
+  "monter un pion ne le déplace pas à l'écran",
+  Math.abs(pose.x - enLair.x) < 1e-9 && Math.abs(pose.y - enLair.y) < 1e-9
+);
+
+// 5. le dé doit rester visible et cliquable, sous le plateau
+const diceProjection = board.project({ x: 0, y: 0, z: 8.6 });
+check(
+  "le dé est sous le plateau, dans le cadre",
+  Math.abs(diceProjection.x) < 1 && Math.abs(diceProjection.y) < 1 && diceProjection.y < 0,
   diceProjection
 );
 
-// le dé est posé DEVANT le plateau, pas dessus
 const { diceGroup: dice3d } = board.buildScene(geo);
 check(
   "le dé est posé hors du plateau",
@@ -568,7 +581,7 @@ check(
   dice3d.position.toArray()
 );
 
-board.setOrbit({ elevation: 0.95, azimuth: 0, zoom: 1 });
+board.setView({ zoom: limites.minZoom });
 
 /* --------------------------------------------------- le dé garde sa face */
 

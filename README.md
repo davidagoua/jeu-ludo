@@ -45,10 +45,11 @@ Testé avec Elixir 1.19.3 / OTP 28 et Phoenix 1.8.
    cliquer sur *Compléter avec des IA et démarrer* pour ne pas attendre.
 4. **Cliquez sur le dé** pour lancer, puis sur un pion en surbrillance.
 
-Le plateau est en **3D** : on peut le faire tourner à la souris (glisser) et
-zoomer (molette). La caméra recule d'elle-même quand on tourne, pour que le
-plateau reste entier dans le cadre. Les pions bondissent de case en case au lieu
-de se téléporter, et la zone du joueur dont c'est le tour s'illumine.
+Le plateau est **plat, vu de dessus**, et dessiné en WebGL (Three.js) : la
+molette éloigne la vue, les pions bondissent de case en case au lieu de se
+téléporter, et la zone du joueur dont c'est le tour s'illumine. La projection est
+orthographique, donc le plateau reste un carré parfait à l'écran, quel que soit
+son contenu.
 
 Le dé est un vrai cube qui roule avant de s'arrêter sur la valeur tirée, et il
 **garde ce numéro affiché jusqu'au lancer suivant** : le serveur remet le dé à
@@ -67,8 +68,8 @@ aucun compte à créer.
 
 ![Plateau de Ludo](docs/plateau.png)
 
-*Image produite depuis le SVG que le client génère réellement, lui-même construit
-à partir de `Ludo.Board.geometry/0`.*
+*Image produite depuis la scène WebGL que le client construit réellement à
+partir de `Ludo.Board.geometry/0` — voir `scripts/dump_board_top.mjs`.*
 
 | Joueur | Base | Colonne d'arrivée | Case de départ |
 | --- | --- | --- | --- |
@@ -120,7 +121,7 @@ lib/ludo_web/
 priv/static/assets/
   css/ludo.css    styles écrits à la main
   js/app.js       client : Socket Phoenix, lobby, panneau de jeu
-  js/board3d.js   plateau 3D (Three.js) : scène, pions, dé, animations
+  js/board3d.js   plateau en WebGL (Three.js) : cases, pions, dé, animations
   js/vendor/      three.module.min.js (vendorisé, voir plus bas)
   js/phoenix.min.js  client Phoenix officiel (vendorisé depuis Hex)
 ```
@@ -142,6 +143,10 @@ Quelques partis pris qui expliquent la structure :
   `app.js` est un script classique et `board3d.js` un module ESM ; les deux se
   synchronisent par l'événement `ludo3dready`, l'ordre de chargement des scripts
   n'étant pas garanti. Three.js n'est chargé que sur la page de jeu.
+* **Le plateau est en WebGL, pas en DOM.** Un seul `<canvas>` au lieu de 1 200
+  nœuds SVG : les déplacements de pions, le roulement du dé et les pulsations
+  sont animés image par image, sans reflow. La vue est orthographique et
+  verticale, donc le rendu reste celui d'un plateau 2D classique.
 
 ### Three.js
 
@@ -169,7 +174,10 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
 node scripts/geometry_check.mjs /tmp/geometry.json   # 37 vérifications : panneau, dé, bannière
-node scripts/three_check.mjs /tmp/geometry.json      # 56 vérifications : scène 3D et cadrage
+node scripts/three_check.mjs /tmp/geometry.json      # 58 vérifications : scène, cadrage, dé
+
+# aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)
+node scripts/dump_board_top.mjs /tmp/geometry.json /tmp/board_top.json
 ```
 
 `mix test` couvre notamment la géométrie (boucle fermée, symétrie des départs,

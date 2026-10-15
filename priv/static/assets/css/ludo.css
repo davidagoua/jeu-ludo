@@ -262,11 +262,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  /* la 3D se manipule à la souris : on indique que c'est interactif */
+  /* le plateau est interactif (pions, dé) mais ne tourne plus */
   touch-action: none;
-  cursor: grab;
+  cursor: pointer;
 }
-#board3d:active { cursor: grabbing; }
 
 .webgl-error {
   position: absolute;
