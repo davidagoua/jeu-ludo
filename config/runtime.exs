@@ -45,19 +45,29 @@ if config_env() == :prod do
   # lancer le conteneur sans aucune configuration.
   secret_key_base =
     case System.get_env("SECRET_KEY_BASE") do
-      # `nil` (variable absente) comme `""` (variable définie mais vide, ce que
-      # produit une substitution docker-compose non renseignée) déclenchent la
-      # génération.
-      value when value in [nil, ""] ->
+      # Seule une valeur d'au moins 64 octets est acceptée par Plug.Session :
+      # en dessous, toute requête qui écrit une session (une redirection avec
+      # message, par exemple) lèverait « cookie store expects
+      # conn.secret_key_base to be at least 64 bytes ». On couvre donc les trois
+      # cas : variable absente, variable vide (ce que produit une substitution
+      # docker-compose non renseignée) et valeur trop courte.
+      value when is_binary(value) and byte_size(value) >= 64 ->
+        value
+
+      value ->
+        raison =
+          case value do
+            nil -> "absent"
+            "" -> "vide"
+            _ -> "trop court (#{byte_size(value)} octets, 64 minimum)"
+          end
+
         IO.puts(
           :stderr,
-          "[ludo] SECRET_KEY_BASE absent : un secret aléatoire a été généré pour ce démarrage."
+          "[ludo] SECRET_KEY_BASE #{raison} : un secret aléatoire a été généré pour ce démarrage."
         )
 
         :crypto.strong_rand_bytes(64) |> Base.encode64()
-
-      value ->
-        value
     end
 
   host = System.get_env("PHX_HOST") || "localhost"

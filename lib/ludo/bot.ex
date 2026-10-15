@@ -103,16 +103,26 @@ defmodule Ludo.Bot do
   end
 
   # Une case sûre ou la colonne d'arrivée mettent le pion à l'abri.
-  defp protected?(_color, to) when is_integer(to) and to >= 56, do: true
-
+  # (`Board.last_ring_position()` est un appel de fonction : interdit en guard.)
   defp protected?(color, to) do
-    case Board.ring_index(color, to) do
-      nil -> false
-      index -> Board.safe_index?(index)
+    cond do
+      not is_integer(to) ->
+        false
+
+      to > Board.last_ring_position() ->
+        true
+
+      true ->
+        case Board.ring_index(color, to) do
+          nil -> false
+          index -> Board.safe_index?(index)
+        end
     end
   end
 
-  defp in_home_column?(to), do: is_integer(to) and to >= 56 and to < Board.finish()
+  defp in_home_column?(to) do
+    is_integer(to) and to > Board.last_ring_position() and to < Board.finish()
+  end
 
   # Pénalité si la case d'arrivée est à portée de dé d'un adversaire.
   defp risk(game, color, to) do

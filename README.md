@@ -45,9 +45,31 @@ Testé avec Elixir 1.19.3 / OTP 28 et Phoenix 1.8.
    cliquer sur *Compléter avec des IA et démarrer* pour ne pas attendre.
 4. Cliquez sur **Lancer le dé**, puis sur un pion mis en surbrillance.
 
+La **zone du joueur dont c'est le tour s'illumine** sur le plateau, et le dé est
+affiché en points : il tourne sur lui-même pendant que le serveur répond, puis
+claque sur la valeur tirée.
+
 Un joueur qui recharge la page **reprend automatiquement son siège** : son
 identifiant est conservé dans le `localStorage` du navigateur, il n'y a donc
 aucun compte à créer.
+
+## Disposition du plateau
+
+| Joueur | Base | Colonne d'arrivée | Case de départ |
+| --- | --- | --- | --- |
+| rouge | haut-gauche | bras gauche | `(1,6)` |
+| bleu | haut-droite | bras haut | `(8,1)` |
+| jaune | bas-droite | bras droit | `(13,8)` |
+| vert | bas-gauche | bras bas | `(6,13)` |
+
+L'anneau compte 56 cases. La case de départ se situe **deux** cases après
+l'entrée de la colonne d'arrivée du même joueur : sortir de sa base et rentrer
+chez soi sont deux cases distinctes, en diagonale — c'est la disposition du
+plateau classique. Un pion parcourt donc 54 cases d'anneau, puis 5 cases de
+colonne, avant l'arrivée.
+
+Les huit **cases sûres** sont les quatre départs (cases colorées, étoile
+blanche) et les quatre cases étoile situées 9 cases plus loin (étoile grise).
 
 ## Règles appliquées
 

@@ -22,6 +22,14 @@ defmodule Ludo.BotTest do
 
   defp set_tokens(game, color, tokens), do: %{game | tokens: Map.put(game.tokens, color, tokens)}
 
+  # Couleur du second siège : l'adversaire dans une partie à 2.
+  defp second, do: Board.seat_color(1)
+
+  # Position relative à laquelle `player` occupe l'index d'anneau donné.
+  defp position_at(player, ring_index) do
+    rem(ring_index - Board.start_index(player) + Board.ring_size(), Board.ring_size())
+  end
+
   describe "choix du coup" do
     test "renvoie nil quand aucun coup n'est possible" do
       game = base_game() |> set_tokens(:red, [:base, :base, :base, :base])
@@ -49,17 +57,21 @@ defmodule Ludo.BotTest do
     end
 
     test "préfère capturer plutôt qu'avancer" do
-      # rouge en 4 peut aller en 5 (index d'anneau 5) où se trouve un pion vert
+      # le pion rouge avance de 1 et tombe sur l'index d'anneau occupé par un
+      # pion adverse ; l'autre pion rouge, plus avancé, n'est pas une capture
+      target = Board.ring_index(:red, 5)
+      occupant = position_at(second(), target)
+
       game = base_game() |> set_tokens(:red, [4, 20, :base, :base])
-      game = set_tokens(game, :green, [47, :base, :base, :base])
+      game = set_tokens(game, second(), [occupant, :base, :base, :base])
       game = %{game | dice: 1}
 
-      assert Board.ring_index(:red, 5) == Board.ring_index(:green, 47)
+      assert Board.ring_index(second(), occupant) == target
       assert Bot.choose_move(game) == 0
     end
 
     test "préfère amener un pion à l'arrivée" do
-      game = base_game() |> set_tokens(:red, [60, 10, :base, :base])
+      game = base_game() |> set_tokens(:red, [Board.finish() - 1, 10, :base, :base])
       game = %{game | dice: 1}
 
       assert Bot.choose_move(game) == 0
@@ -78,20 +90,21 @@ defmodule Ludo.BotTest do
     end
 
     test "évite de se poser devant un adversaire" do
-      # rouge en 20 : 20 -> 26 est menacé par un vert en 22 (index 36), à 4 cases
-      # derrière la case 26 ; l'autre option 20 -> 27 l'est aussi, mais le pion
-      # protégé en colonne d'arrivée doit l'emporter.
-      game = base_game() |> set_tokens(:red, [58, 20, :base, :base])
-      game = set_tokens(game, :green, [22, :base, :base, :base])
+      # le pion rouge déjà dans sa colonne d'arrivée est à l'abri : il doit être
+      # préféré au pion de l'anneau, exposé aux pions adverses.
+      game = base_game() |> set_tokens(:red, [Board.finish() - 2, 20, :base, :base])
+      game = set_tokens(game, second(), [22, :base, :base, :base])
       game = %{game | dice: 1}
 
-      # 58 -> 59 reste dans la colonne d'arrivée, à l'abri
       assert Bot.choose_move(game) == 0
     end
 
     test "le classement des coups est cohérent et complet" do
+      target = Board.ring_index(:red, 5)
+      occupant = position_at(second(), target)
+
       game = base_game() |> set_tokens(:red, [4, 20, :base, :base])
-      game = set_tokens(game, :green, [47, :base, :base, :base])
+      game = set_tokens(game, second(), [occupant, :base, :base, :base])
       game = %{game | dice: 1}
 
       ranked = Bot.rank_moves(game)

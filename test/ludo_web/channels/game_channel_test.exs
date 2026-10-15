@@ -64,12 +64,15 @@ defmodule LudoWeb.GameChannelTest do
       # la réponse de `join` n'est pas sérialisée : les clés restent des atomes
       geo = reply.geometry
       assert geo.ring_size == 56
+      assert geo.last_ring_position == 54
+      assert geo.finish == 60
       assert length(geo.ring) == 56
       assert length(geo.home_columns[:red]) == 5
       assert length(geo.bases[:blue]) == 4
       assert length(geo.center) == 5
-      assert geo.safe_indexes == [0, 8, 14, 22, 28, 36, 42, 50]
-      assert geo.starts[:red] == 0
+      assert geo.safe_indexes == [1, 10, 15, 24, 29, 38, 43, 52]
+      # le départ rouge se situe deux cases après l'entrée de sa colonne
+      assert geo.starts[:red] == 1
       assert geo.colors[:red] =~ "#"
       assert Enum.sort(Map.keys(geo.starts)) == [:blue, :green, :red, :yellow]
     end
@@ -82,7 +85,9 @@ defmodule LudoWeb.GameChannelTest do
       decoded = Jason.decode!(json)
       # après passage en JSON, les clés deviennent des chaînes : c'est ce que
       # verra le navigateur.
-      assert decoded["starts"]["red"] == 0
+      assert decoded["starts"]["red"] == 1
+      assert decoded["last_ring_position"] == 54
+      assert decoded["finish"] == 60
       assert length(decoded["ring"]) == 56
     end
 
@@ -91,7 +96,7 @@ defmodule LudoWeb.GameChannelTest do
       {code, _host} = create(:p4)
 
       {:ok, reply1, _} = join_game(code, "Alice", id())
-      assert reply1.seat.color == "green"
+      assert reply1.seat.color == "blue"
       assert reply1.seat.seat == 1
       assert reply1.seat.how == "joined"
 
@@ -100,7 +105,7 @@ defmodule LudoWeb.GameChannelTest do
       assert reply2.seat.seat == 2
 
       {:ok, reply3, _} = join_game(code, "Carol", id())
-      assert reply3.seat.color == "blue"
+      assert reply3.seat.color == "green"
       assert reply3.seat.seat == 3
     end
 

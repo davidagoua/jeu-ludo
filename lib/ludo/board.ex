@@ -9,21 +9,37 @@ defmodule Ludo.Board do
     * le centre (5 cases en « plus ») est la zone d'arrivée.
 
   Le chemin principal est un **anneau fermé de 56 cases**. Un pion parcourt
-  d'abord l'anneau (positions `0..55`), puis sa colonne d'arrivée (positions
-  `56..60`), puis l'arrivée (position `61`).
+  d'abord l'anneau (positions `0..54`), puis sa colonne d'arrivée (positions
+  `55..59`), puis l'arrivée (position `60`).
 
-  Les quatre joueurs démarrent à 14 cases d'écart (`0, 14, 28, 42`) : la boucle
-  de 56 cases est donc parfaitement symétrique. La case de départ d'un joueur
-  est toujours la case d'anneau qui suit immédiatement l'entrée de sa colonne
-  d'arrivée, si bien que chaque pion fait le tour complet avant de rentrer.
+  Les quatre joueurs démarrent à 14 cases d'écart (`1, 15, 29, 43`) : la boucle
+  de 56 cases est donc parfaitement symétrique. La case de départ d'un joueur se
+  trouve **deux** cases après l'entrée de sa colonne d'arrivée : sortir de la
+  base et rentrer dans sa colonne sont deux cases distinctes, en diagonale —
+  c'est la disposition du plateau classique.
+
+  | Joueur | Base | Colonne d'arrivée | Départ |
+  | --- | --- | --- | --- |
+  | rouge | haut-gauche | gauche | `(1,6)` |
+  | bleu | haut-droite | haut | `(8,1)` |
+  | jaune | bas-droite | droite | `(13,8)` |
+  | vert | bas-gauche | bas | `(6,13)` |
   """
 
   @grid 15
   @ring_size 56
   @home_length 5
-  @finish 61
 
-  @players [:red, :green, :yellow, :blue]
+  # Dernière position sur l'anneau : c'est l'entrée de la colonne d'arrivée du
+  # joueur. Comme le départ se situe deux cases après cette entrée, un pion
+  # parcourt 54 pas sur l'anneau avant de s'engager dans sa colonne.
+  @last_ring_position 54
+
+  # Positions 55..59 : colonne d'arrivée ; position 60 : arrivée.
+  @finish 60
+
+  # Ordre des sièges, dans le sens horaire du plateau.
+  @players [:red, :blue, :yellow, :green]
 
   # Anneau extérieur, dans le sens horaire. Chaque case est orthogonalement
   # adjacente à la suivante, et la dernière touche la première.
@@ -87,29 +103,34 @@ defmodule Ludo.Board do
   ]
 
   # Case de départ de chaque joueur (index dans l'anneau).
-  @starts %{red: 0, green: 14, yellow: 28, blue: 42}
+  #
+  # Le départ est **deux** cases après l'entrée de la colonne d'arrivée du même
+  # joueur : sur le plateau, sortir de la base et entrer dans sa colonne sont
+  # deux cases distinctes, disposées en diagonale (par exemple (1,6) pour le
+  # départ rouge et (0,7) pour l'entrée de sa colonne).
+  @starts %{red: 1, blue: 15, yellow: 29, green: 43}
 
   # Colonnes d'arrivée, de l'extérieur vers le centre.
   @home_columns %{
     red: [{1, 7}, {2, 7}, {3, 7}, {4, 7}, {5, 7}],
-    green: [{7, 1}, {7, 2}, {7, 3}, {7, 4}, {7, 5}],
+    blue: [{7, 1}, {7, 2}, {7, 3}, {7, 4}, {7, 5}],
     yellow: [{13, 7}, {12, 7}, {11, 7}, {10, 7}, {9, 7}],
-    blue: [{7, 13}, {7, 12}, {7, 11}, {7, 10}, {7, 9}]
+    green: [{7, 13}, {7, 12}, {7, 11}, {7, 10}, {7, 9}]
   }
 
   # Emplacements des pions dans chaque base (pour l'affichage).
   @bases %{
     red: [{1, 1}, {4, 1}, {1, 4}, {4, 4}],
-    green: [{10, 1}, {13, 1}, {10, 4}, {13, 4}],
+    blue: [{10, 1}, {13, 1}, {10, 4}, {13, 4}],
     yellow: [{10, 10}, {13, 10}, {10, 13}, {13, 13}],
-    blue: [{1, 10}, {4, 10}, {1, 13}, {4, 13}]
+    green: [{1, 10}, {4, 10}, {1, 13}, {4, 13}]
   }
 
   @center [{7, 6}, {6, 7}, {8, 7}, {7, 8}, {7, 7}]
 
-  # Cases sûres : les 4 cases de départ et les 4 cases « étoile », situées
-  # 8 cases après chaque départ. Sur une case sûre, aucune capture n'a lieu.
-  @safe_indexes [0, 8, 14, 22, 28, 36, 42, 50]
+  # Cases sûres : les 4 cases de départ et les 4 cases « étoile » situées 9 cases
+  # après chaque départ. Aucune capture n'y a lieu.
+  @safe_indexes [1, 10, 15, 24, 29, 38, 43, 52]
 
   @colors %{
     red: "#e5484d",
@@ -132,6 +153,9 @@ defmodule Ludo.Board do
 
   @doc "Nombre de cases de la colonne d'arrivée."
   def home_length, do: @home_length
+
+  @doc "Dernière position sur l'anneau, c'est-à-dire l'entrée de la colonne."
+  def last_ring_position, do: @last_ring_position
 
   @doc "Position d'arrivée : la dernière étape du parcours d'un pion."
   def finish, do: @finish
@@ -163,15 +187,21 @@ defmodule Ludo.Board do
   @doc """
   Case de la grille occupée par un pion à la position `p`.
 
-  `p` va de `0` à `61`. Renvoie `{x, y}` ou `:finished`.
+  `p` va de `0` à `60` :
+
+    * `0..54` — anneau ;
+    * `55..59` — colonne d'arrivée ;
+    * `60` — arrivée.
+
+  Renvoie `{x, y}` ou `:finished`.
   """
   def cell(_player, :base), do: nil
   def cell(_player, :finished), do: :finished
 
   def cell(player, p) when is_integer(p) and p >= 0 do
     cond do
-      p < @ring_size -> Enum.at(@ring, rem(start_index(player) + p, @ring_size))
-      p < @ring_size + @home_length -> Enum.at(home_column(player), p - @ring_size)
+      p <= @last_ring_position -> Enum.at(@ring, rem(start_index(player) + p, @ring_size))
+      p < @finish -> Enum.at(home_column(player), p - @last_ring_position - 1)
       p == @finish -> :finished
       true -> nil
     end
@@ -183,7 +213,8 @@ defmodule Ludo.Board do
   Renvoie `nil` si le pion n'est pas sur l'anneau (base, colonne d'arrivée ou
   arrivée) : deux pions ne peuvent s'y capturer.
   """
-  def ring_index(player, p) when is_integer(p) and p >= 0 and p < @ring_size do
+  def ring_index(player, p)
+      when is_integer(p) and p >= 0 and p <= @last_ring_position do
     rem(start_index(player) + p, @ring_size)
   end
 
@@ -197,6 +228,7 @@ defmodule Ludo.Board do
       grid: @grid,
       ring_size: @ring_size,
       home_length: @home_length,
+      last_ring_position: @last_ring_position,
       finish: @finish,
       ring: Enum.map(@ring, &Tuple.to_list/1),
       starts: Map.new(@starts, fn {player, i} -> {player, i} end),

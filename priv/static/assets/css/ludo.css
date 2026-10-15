@@ -285,25 +285,67 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .turn { font-weight: 600; margin: 0 0 0.8rem; }
 .dice-box { display: flex; align-items: center; gap: 0.7rem; margin-bottom: 0.7rem; }
+
+/* Dé : une grille 3x3 dont on allume certains points selon la face. */
 .dice {
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   flex: none;
   display: grid;
   place-items: center;
-  font-size: 1.6rem;
-  font-weight: 700;
   border-radius: 12px;
-  background: #0e141d;
-  border: 1px solid var(--line);
+  background: linear-gradient(160deg, #f7fafc, #d7dfe9);
+  border: 1px solid #9fb0c4;
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 12%), 0 4px 10px rgb(0 0 0 / 35%);
+  transform-origin: center;
 }
-.dice.rolling { animation: shake 0.4s ease; }
-@keyframes shake {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  25% { transform: translateY(-3px) rotate(-8deg); }
-  75% { transform: translateY(3px) rotate(8deg); }
+.dice-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 3px;
+  width: 40px;
+  height: 40px;
 }
+.pip { border-radius: 50%; background: transparent; }
+.pip.on {
+  background: #1b2330;
+  box-shadow: inset 0 -1px 1px rgb(255 255 255 / 35%);
+}
+
+/* Le dé tourne tant que le serveur n'a pas répondu… */
+.dice.rolling { animation: tumble 0.5s ease-in-out infinite; }
+@keyframes tumble {
+  0%, 100% { transform: rotate(-14deg) scale(1); }
+  25% { transform: rotate(10deg) scale(1.08); }
+  50% { transform: rotate(16deg) scale(0.96); }
+  75% { transform: rotate(-8deg) scale(1.05); }
+}
+
+/* …puis claque sur la valeur tirée. */
+.dice.settled { animation: dice-pop 0.42s cubic-bezier(0.2, 1.4, 0.4, 1); }
+@keyframes dice-pop {
+  0% { transform: scale(0.65) rotate(-10deg); }
+  55% { transform: scale(1.18) rotate(4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
 .dice-box .primary { width: auto; flex: 1; }
+
+/* Zone du joueur dont c'est le tour : la base concernée s'illumine. */
+.base-turn {
+  stroke: #ffffff;
+  stroke-width: 0.3;
+  filter: brightness(1.12);
+  animation: base-glow 1.5s ease-in-out infinite;
+}
+@keyframes base-glow {
+  0%, 100% { stroke-opacity: 1; }
+  50% { stroke-opacity: 0.2; }
+}
+
+/* Cases de départ : colorées au nom du joueur, avec leur étoile blanche. */
+.cell.start { stroke: #0d1117; stroke-width: 0.05; }
 
 .log { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; color: var(--muted); }
 .log li { padding: 0.2rem 0; border-bottom: 1px dashed #2a3546; }

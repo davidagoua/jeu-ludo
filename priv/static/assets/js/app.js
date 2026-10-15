@@ -72,7 +72,9 @@
   let mySeat = null;
   let lastState = null;
   let tokenEls = new Map();
+  let baseEls = {};
   let lastDice = null;
+  let spinTimer = null;
 
   // ---------------------------------------------------------------- socket
 
@@ -265,8 +267,12 @@
       .receive("timeout", () => toast("Le serveur ne répond pas."));
 
     $("#roll").addEventListener("click", () => {
+      // le dé tourne immédiatement ; il s'arrêtera sur la valeur du serveur
+      startSpin();
+
       push(game, "roll", {}, (reply) => {
         lastState = reply.state;
+        stopSpin(reply.state.dice);
         renderState(reply.state);
       });
     });
@@ -309,20 +315,22 @@
     if (!svg || !geometry) return;
     svg.innerHTML = "";
     tokenEls = new Map();
+    baseEls = {};
 
     const size = geometry.grid;
     svg.setAttribute("viewBox", "0 0 " + size + " " + size);
     svg.appendChild(svgEl("rect", { x: 0, y: 0, width: size, height: size, fill: "#141c26" }));
 
-    // bases
+    // bases : on garde une référence à chaque rectangle pour pouvoir mettre en
+    // évidence la zone du joueur dont c'est le tour
     for (const color in BASE_AREA) {
       const [bx, by] = BASE_AREA[color];
-      svg.appendChild(
-        svgEl("rect", {
-          x: bx, y: by, width: 6, height: 6, rx: 0.3,
-          fill: geometry.colors[color], class: "base"
-        })
-      );
+      const base = svgEl("rect", {
+        x: bx, y: by, width: 6, height: 6, rx: 0.3,
+        fill: geometry.colors[color], class: "base"
+      });
+      baseEls[color] = base;
+      svg.appendChild(base);
       svg.appendChild(
         svgEl("rect", { x: bx + 1, y: by + 1, width: 4, height: 4, rx: 0.2, class: "base-inner" })
       );
@@ -331,12 +339,30 @@
       }
     }
 
+    // cases de départ : colorées à la couleur du joueur, comme sur le plateau
+    const startOwner = {};
+    for (const color of geometry.players) startOwner[geometry.starts[color]] = color;
+
     // anneau
     geometry.ring.forEach(([x, y], index) => {
       const safe = geometry.safe_indexes.indexOf(index) !== -1;
-      svg.appendChild(svgEl("rect", { x: x, y: y, width: 1, height: 1, class: safe ? "cell safe" : "cell" }));
+      const owner = startOwner[index];
+
+      const attrs = {
+        x: x, y: y, width: 1, height: 1,
+        class: owner ? "cell start" : safe ? "cell safe" : "cell"
+      };
+      if (owner) attrs.fill = geometry.colors[owner];
+      svg.appendChild(svgEl("rect", attrs));
+
       if (safe) {
-        svg.appendChild(svgEl("path", { d: starPath(x + 0.5, y + 0.5, 0.3), fill: "#8494a8" }));
+        // étoile blanche sur une case de départ colorée, grise ailleurs
+        svg.appendChild(
+          svgEl("path", {
+            d: starPath(x + 0.5, y + 0.5, 0.3),
+            fill: owner ? "#ffffff" : "#8494a8"
+          })
+        );
       }
     });
 
@@ -391,14 +417,15 @@
       return [x + 0.5, y + 0.5];
     }
 
-    if (position < geo.ring_size) {
+    // 0..last_ring_position : anneau ; ensuite la colonne d'arrivée
+    if (position <= geo.last_ring_position) {
       const idx = (geo.starts[color] + position) % geo.ring_size;
       const [x, y] = geo.ring[idx];
       return [x + 0.5, y + 0.5];
     }
 
     if (position < geo.finish) {
-      const [x, y] = geo.home_columns[color][position - geo.ring_size];
+      const [x, y] = geo.home_columns[color][position - geo.last_ring_position - 1];
       return [x + 0.5, y + 0.5];
     }
 
@@ -417,6 +444,7 @@
   function renderState(state) {
     if (!state || !geometry) return;
     renderPlayers(state);
+    renderActiveBase(state);
     renderTurn(state);
     renderLog(state);
     renderBanner(state);
@@ -475,6 +503,7 @@
       roll.disabled = true;
       hint.textContent = "La partie démarre dès que tous les sièges sont pris.";
       hostActions.hidden = mySeat !== 0;
+      settleDice(null);
       return;
     }
 
@@ -485,7 +514,7 @@
       turn.textContent = "Partie terminée";
       roll.disabled = true;
       hint.textContent = winner ? winner.name + " remporte la partie." : "";
-      dice.textContent = "–";
+      settleDice(null);
       return;
     }
 
@@ -494,13 +523,12 @@
       (mine ? "À vous de jouer" : "Au tour de " + state.turn_name) +
       (state.turn_is_bot ? " (IA)" : "");
 
-    dice.textContent = state.dice === null ? "–" : String(state.dice);
-
-    if (state.dice !== null && state.dice !== lastDice) {
-      dice.classList.remove("rolling");
-      void dice.offsetWidth;
-      dice.classList.add("rolling");
+    // Pendant que le joueur lance son propre dé, c'est l'animation qui pilote la
+    // face affichée : on ne l'écrase pas avec l'état du serveur.
+    if (!spinTimer) {
+      settleDice(state.dice);
     }
+
     lastDice = state.dice;
 
     roll.disabled = !(mine && state.dice === null);
@@ -513,6 +541,94 @@
       hint.textContent = "Cliquez sur un pion en surbrillance pour le déplacer.";
     } else {
       hint.textContent = "Aucun coup possible avec ce dé.";
+    }
+  }
+
+  // ---- dé : faces à points et animations
+
+  // Index des points allumés dans une grille 3x3, par valeur de dé.
+  const DICE_PIPS = {
+    1: [4],
+    2: [0, 8],
+    3: [0, 4, 8],
+    4: [0, 2, 6, 8],
+    5: [0, 2, 4, 6, 8],
+    6: [0, 2, 3, 5, 6, 8]
+  };
+
+  function renderDiceFace(value) {
+    const dice = $("#dice");
+    if (!dice) return;
+
+    const on = DICE_PIPS[value] || [];
+    dice.innerHTML = "";
+
+    const grid = document.createElement("div");
+    grid.className = "dice-grid";
+
+    for (let i = 0; i < 9; i++) {
+      const pip = document.createElement("span");
+      pip.className = on.indexOf(i) === -1 ? "pip" : "pip on";
+      grid.appendChild(pip);
+    }
+
+    dice.appendChild(grid);
+    dice.setAttribute("aria-label", value ? "dé : " + value : "dé non lancé");
+  }
+
+  // Affiche une face et joue la petite animation d'arrivée.
+  function settleDice(value) {
+    if (spinTimer) return;
+
+    const dice = $("#dice");
+    if (!dice) return;
+
+    renderDiceFace(value);
+
+    if (value !== null && value !== lastDice) {
+      dice.classList.remove("settled");
+      void dice.offsetWidth;
+      dice.classList.add("settled");
+    }
+  }
+
+  function startSpin() {
+    const dice = $("#dice");
+    if (!dice) return;
+
+    stopSpin();
+    dice.classList.add("rolling");
+
+    spinTimer = window.setInterval(() => {
+      renderDiceFace(1 + Math.floor(Math.random() * 6));
+    }, 70);
+  }
+
+  function stopSpin(value) {
+    if (spinTimer) {
+      window.clearInterval(spinTimer);
+      spinTimer = null;
+    }
+
+    const dice = $("#dice");
+    if (!dice) return;
+
+    dice.classList.remove("rolling");
+    renderDiceFace(value);
+
+    if (value !== null) {
+      dice.classList.remove("settled");
+      void dice.offsetWidth;
+      dice.classList.add("settled");
+    }
+  }
+
+  // ---- mise en évidence de la zone du joueur dont c'est le tour
+
+  function renderActiveBase(state) {
+    for (const color in baseEls) {
+      const active = state.status === "playing" && state.turn_color === color;
+      baseEls[color].classList.toggle("base-turn", active);
     }
   }
 

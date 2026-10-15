@@ -6,7 +6,7 @@
  *
  *   - salon d'accueil : réception de la liste et des modes
  *   - création d'une partie à 2
- *   - connexion de deux joueurs (sièges rouge puis vert)
+ *   - connexion de deux joueurs (sièges rouge puis bleu)
  *   - coup illégal refusé, puis partie jouée jusqu'à un vainqueur
  *   - diffusion de l'état aux deux clients
  *
@@ -215,7 +215,8 @@ async function main() {
   await bob.connect();
   const bobJoin = await bob.join();
 
-  check("le second joueur prend le siège vert", bobJoin.seat.color === "green", bobJoin.seat);
+  // l'ordre des couleurs suit les sièges : rouge puis bleu
+  check("le second joueur prend le siège bleu", bobJoin.seat.color === "blue", bobJoin.seat);
   check("la partie démarre automatiquement", bobJoin.state.status === "playing", bobJoin.state.status);
   check("deux joueurs sont installés", bobJoin.state.players.length === 2);
 
@@ -264,7 +265,10 @@ async function main() {
   section("Partie jouée jusqu'à un vainqueur");
   let state = pushed;
 
-  const clients = { red: alice, green: bob };
+  // on associe chaque client à SON siège, sans présumer des couleurs
+  const clients = {};
+  clients[aliceJoin.seat.color] = alice;
+  clients[bobJoin.seat.color] = bob;
   let turns = 0;
 
   while (state.status === "playing" && turns < 400) {
@@ -286,7 +290,7 @@ async function main() {
   }
 
   check("la partie s'est terminée", state.status === "finished", state.status);
-  check("un vainqueur est désigné", ["red", "green"].includes(state.winner), state.winner);
+  check("un vainqueur est désigné", Object.keys(clients).includes(state.winner), state.winner);
   const winner = state.players.find((p) => p.color === state.winner);
   check("le vainqueur a rentré ses quatre pions", winner && winner.finished === 4, winner && winner.finished);
   check("la partie a duré un nombre plausible de tours", turns > 5 && turns < 400, turns);

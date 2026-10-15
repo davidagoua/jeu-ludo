@@ -4,6 +4,10 @@ defmodule Ludo.GameTest do
   alias Ludo.{Board, Game}
 
   # --- aides ---------------------------------------------------------------
+  #
+  # Les tests ne codent jamais une position « en dur » : ils la calculent à
+  # partir de l'index d'anneau visé, si bien qu'un changement de géométrie du
+  # plateau ne les casse pas.
 
   defp new_game(mode \\ :p2, host \\ "Alice", id \\ "a") do
     Game.new("TEST", mode, host, id)
@@ -20,7 +24,6 @@ defmodule Ludo.GameTest do
 
     case Game.start(game) do
       {:ok, game} -> game
-      # le mode solo démarre tout seul à la création
       {:error, :already_started} -> game
     end
   end
@@ -30,6 +33,17 @@ defmodule Ludo.GameTest do
   end
 
   defp finish, do: Board.finish()
+
+  # Couleur du second siège : c'est l'adversaire dans une partie à 2.
+  defp second, do: Board.seat_color(1)
+
+  # Position relative à laquelle `player` occupe l'index d'anneau donné.
+  defp position_at(player, ring_index) do
+    rem(ring_index - Board.start_index(player) + Board.ring_size(), Board.ring_size())
+  end
+
+  # Index d'anneau atteint par `player` depuis la position `position`.
+  defp index_at(player, position), do: Board.ring_index(player, position)
 
   # --- création ------------------------------------------------------------
 
@@ -54,7 +68,8 @@ defmodule Ludo.GameTest do
       assert Game.human_count(game) == 1
       assert Enum.count(game.players, &(&1.kind == :bot)) == 3
       assert Enum.map(game.players, & &1.seat) == [0, 1, 2, 3]
-      assert Enum.map(game.players, & &1.color) == [:red, :green, :yellow, :blue]
+      # ordre horaire du plateau : rouge, bleu, jaune, vert
+      assert Enum.map(game.players, & &1.color) == [:red, :blue, :yellow, :green]
     end
 
     test "les sièges se remplissent dans l'ordre" do
@@ -66,7 +81,7 @@ defmodule Ludo.GameTest do
       {:ok, game, p4, :joined} = Game.add_player(game, "Dan", "d")
 
       assert [p2.seat, p3.seat, p4.seat] == [1, 2, 3]
-      assert [p2.color, p3.color, p4.color] == [:green, :yellow, :blue]
+      assert [p2.color, p3.color, p4.color] == [:blue, :yellow, :green]
       assert {:error, :full} = Game.add_player(game, "Eve", "e")
     end
 
@@ -75,7 +90,7 @@ defmodule Ludo.GameTest do
       {:ok, game, _bob, :joined} = Game.add_player(game, "Bob", "b")
       {:ok, game, back, :rejoined} = Game.add_player(game, "Bob", "b")
       assert back.seat == 1
-      assert back.color == :green
+      assert back.color == :blue
       assert length(game.players) == 2
     end
 
@@ -163,9 +178,7 @@ defmodule Ludo.GameTest do
     end
 
     test "avec un seul coup possible, il est joué automatiquement" do
-      game =
-        started()
-        |> set_tokens(:red, [0, finish(), finish(), finish()])
+      game = started() |> set_tokens(:red, [0, finish(), finish(), finish()])
 
       {:ok, game, _events} = Game.roll(game, "a", 6)
       # le pion est déjà passé de 0 à 6
@@ -191,7 +204,8 @@ defmodule Ludo.GameTest do
       {:ok, game, _events} = Game.move(game, "a", 0)
 
       assert Game.tokens_of(game, :red) == [0, :base, :base, :base]
-      assert Board.cell(:red, 0) == {0, 6}
+      # la case de départ du rouge est (1,6) sur le plateau classique
+      assert Board.cell(:red, 0) == {1, 6}
     end
 
     test "un pion avance du nombre exact de cases" do
@@ -201,23 +215,29 @@ defmodule Ludo.GameTest do
     end
 
     test "il faut le compte exact pour entrer à l'arrivée" do
-      game = started() |> set_tokens(:red, [60, :base, :base, :base])
+      # deux cases avant l'arrivée
+      game = started() |> set_tokens(:red, [finish() - 2, :base, :base, :base])
 
-      # 60 + 6 dépasserait l'arrivée : le pion ne peut pas bouger.
-      # Les trois pions en base restent jouables, eux, puisqu'on a fait un 6.
+      # un 6 dépasserait l'arrivée : le pion ne peut pas bouger (les trois
+      # pions en base restent jouables, eux, puisqu'on a fait un 6)
       refute 0 in Game.legal_moves(%{game | dice: 6})
       assert Game.legal_moves(%{game | dice: 6}) == [1, 2, 3]
-      assert Game.legal_moves(%{game | dice: 1}) == [0]
 
-      {:ok, game, _events} = Game.move(%{game | dice: 1}, "a", 0)
+      assert Game.legal_moves(%{game | dice: 2}) == [0]
+      {:ok, game, _events} = Game.move(%{game | dice: 2}, "a", 0)
       assert Game.tokens_of(game, :red) == [finish(), :base, :base, :base]
     end
 
-    test "un pion peut franchir la dernière case de l'anneau vers sa colonne" do
-      game = started() |> set_tokens(:red, [55, :base, :base, :base]) |> Map.put(:dice, 6)
+    test "un pion franchit la dernière case de l'anneau pour entrer dans sa colonne" do
+      game =
+        started()
+        |> set_tokens(:red, [Board.last_ring_position(), :base, :base, :base])
+        |> Map.put(:dice, 6)
+
       {:ok, game, _events} = Game.move(game, "a", 0)
-      assert Game.tokens_of(game, :red) == [61, :base, :base, :base]
-      assert Board.cell(:red, 55) == {0, 7}
+      assert Game.tokens_of(game, :red) == [finish(), :base, :base, :base]
+      # la dernière position d'anneau est l'entrée de la colonne
+      assert Board.cell(:red, Board.last_ring_position()) == {0, 7}
     end
 
     test "un pion déjà arrivé ne bouge plus" do
@@ -241,7 +261,7 @@ defmodule Ludo.GameTest do
     test "un 6 donne un tour supplémentaire" do
       game = started() |> set_tokens(:red, [10, :base, :base, :base])
 
-      # Quatre coups possibles : le joueur doit choisir, on reste maître du coup.
+      # quatre coups possibles : le joueur doit choisir, on reste maître du coup
       {:ok, game, _events} = Game.roll(game, "a", 6)
       assert game.six_streak == 1
       assert game.turn == 0
@@ -253,17 +273,19 @@ defmodule Ludo.GameTest do
     end
 
     test "une capture donne un tour supplémentaire" do
+      target = index_at(:red, 5)
+
       game = started() |> set_tokens(:red, [4, :base, :base, :base])
-      game = set_tokens(game, :green, [47, :base, :base, :base])
+      game = set_tokens(game, second(), [position_at(second(), target), :base, :base, :base])
       game = %{game | turn: 0, dice: 1}
 
       {:ok, game, _events} = Game.move(game, "a", 0)
       assert game.turn == 0
-      assert Game.tokens_of(game, :green) == [:base, :base, :base, :base]
+      assert Game.tokens_of(game, second()) == [:base, :base, :base, :base]
     end
 
     test "un pion arrivé donne un tour supplémentaire" do
-      game = started() |> set_tokens(:red, [60, :base, :base, :base])
+      game = started() |> set_tokens(:red, [finish() - 1, :base, :base, :base])
       game = %{game | dice: 1}
       {:ok, game, _events} = Game.move(game, "a", 0)
       assert Game.tokens_of(game, :red) == [finish(), :base, :base, :base]
@@ -271,10 +293,7 @@ defmodule Ludo.GameTest do
     end
 
     test "trois 6 consécutifs annulent le tour" do
-      game =
-        started()
-        |> set_tokens(:red, [10, :base, :base, :base])
-        |> Map.put(:turn, 0)
+      game = started() |> set_tokens(:red, [10, :base, :base, :base]) |> Map.put(:turn, 0)
 
       # 1er 6 : tour supplémentaire
       {:ok, game, _} = Game.roll(game, "a", 6)
@@ -306,7 +325,7 @@ defmodule Ludo.GameTest do
 
     test "le tour revient au premier joueur après le dernier" do
       game = started(:p2)
-      game = %{game | turn: 1, dice: 2} |> set_tokens(:green, [10, :base, :base, :base])
+      game = %{game | turn: 1, dice: 2} |> set_tokens(second(), [10, :base, :base, :base])
       {:ok, game, _} = Game.move(game, "b", 0)
       assert game.turn == 0
     end
@@ -316,50 +335,64 @@ defmodule Ludo.GameTest do
 
   describe "captures" do
     test "atterrir sur un pion adverse le renvoie à sa base" do
-      # rouge en 4 -> 5 (index d'anneau 5) ; vert en 47 occupe l'index 5
+      # le rouge va de la position 4 à la position 5, dont l'index d'anneau est
+      # occupé par un pion du joueur suivant
+      target = index_at(:red, 5)
+      occupant = position_at(second(), target)
+
       game = started() |> set_tokens(:red, [4, :base, :base, :base])
-      game = set_tokens(game, :green, [47, :base, :base, :base])
+      game = set_tokens(game, second(), [occupant, :base, :base, :base])
       game = %{game | turn: 0, dice: 1}
 
-      assert Board.ring_index(:red, 5) == Board.ring_index(:green, 47)
+      refute Board.safe_index?(target)
 
       {:ok, game, events} = Game.move(game, "a", 0)
-      assert Game.tokens_of(game, :green) == [:base, :base, :base, :base]
+      assert Game.tokens_of(game, second()) == [:base, :base, :base, :base]
       assert Enum.any?(events, &(&1.type == :captured))
     end
 
     test "aucune capture sur une case sûre" do
-      # la case d'anneau 8 est sûre : rouge 7 -> 8, vert en 50 y est aussi
-      game = started() |> set_tokens(:red, [7, :base, :base, :base])
-      game = set_tokens(game, :green, [50, :base, :base, :base])
+      # on vise une case étoile : le pion adverse y est protégé
+      # on vise une case étoile (et non une case de départ, qui est aussi sûre
+      # mais dont la position relative au joueur ne laisse pas de place avant)
+      safe = Enum.find(Board.safe_indexes(), &(rem(&1, 14) != 1))
+
+      red_position = position_at(:red, safe) - 1
+      occupant = position_at(second(), safe)
+
+      game = started() |> set_tokens(:red, [red_position, :base, :base, :base])
+      game = set_tokens(game, second(), [occupant, :base, :base, :base])
       game = %{game | turn: 0, dice: 1}
 
-      assert Board.safe_index?(8)
-      assert Board.ring_index(:red, 8) == Board.ring_index(:green, 50)
+      assert Board.safe_index?(safe)
+      assert index_at(:red, red_position + 1) == safe
 
       {:ok, game, events} = Game.move(game, "a", 0)
-      assert Game.tokens_of(game, :green) == [50, :base, :base, :base]
+      assert Game.tokens_of(game, second()) == [occupant, :base, :base, :base]
       refute Enum.any?(events, &(&1.type == :captured))
     end
 
     test "un pion dans sa colonne d'arrivée ne peut plus être capturé" do
-      game = started() |> set_tokens(:red, [56, :base, :base, :base])
-      game = set_tokens(game, :green, [50, :base, :base, :base])
+      game = started() |> set_tokens(:red, [Board.last_ring_position() + 1, :base, :base, :base])
+      game = set_tokens(game, second(), [10, :base, :base, :base])
       game = %{game | turn: 0, dice: 1}
 
       {:ok, game, events} = Game.move(game, "a", 0)
-      assert Game.tokens_of(game, :red) == [57, :base, :base, :base]
-      assert Game.tokens_of(game, :green) == [50, :base, :base, :base]
+      assert Game.tokens_of(game, :red) == [Board.last_ring_position() + 2, :base, :base, :base]
+      assert Game.tokens_of(game, second()) == [10, :base, :base, :base]
       refute Enum.any?(events, &(&1.type == :captured))
     end
 
     test "une capture renvoie tous les pions adverses de la case" do
+      target = index_at(:red, 5)
+      occupant = position_at(second(), target)
+
       game = started() |> set_tokens(:red, [4, :base, :base, :base])
-      game = set_tokens(game, :green, [47, 47, :base, :base])
+      game = set_tokens(game, second(), [occupant, occupant, :base, :base])
       game = %{game | turn: 0, dice: 1}
 
       {:ok, game, _events} = Game.move(game, "a", 0)
-      assert Game.tokens_of(game, :green) == [:base, :base, :base, :base]
+      assert Game.tokens_of(game, second()) == [:base, :base, :base, :base]
     end
   end
 
@@ -367,7 +400,10 @@ defmodule Ludo.GameTest do
 
   describe "victoire" do
     test "rentrer ses quatre pions fait gagner la partie" do
-      game = started() |> set_tokens(:red, [finish(), finish(), finish(), 60])
+      game =
+        started()
+        |> set_tokens(:red, [finish(), finish(), finish(), finish() - 1])
+
       assert game.status == :playing
 
       {:ok, game, _events} = Game.roll(game, "a", 1)
@@ -378,7 +414,10 @@ defmodule Ludo.GameTest do
     end
 
     test "on ne peut plus jouer une fois la partie terminée" do
-      game = started() |> set_tokens(:red, [finish(), finish(), finish(), 60])
+      game =
+        started()
+        |> set_tokens(:red, [finish(), finish(), finish(), finish() - 1])
+
       {:ok, game, _} = Game.roll(game, "a", 1)
 
       assert {:error, :not_playing} = Game.roll(game, "b", 3)
@@ -414,7 +453,7 @@ defmodule Ludo.GameTest do
       assert length(decoded["players"]) == 4
 
       red = Enum.find(decoded["players"], &(&1["color"] == "red"))
-      assert red["tokens"] == [0, 5, "base", 61]
+      assert red["tokens"] == [0, 5, "base", 60]
       assert red["finished"] == 1
       assert red["kind"] == "human"
       assert is_binary(red["name"])
@@ -427,9 +466,7 @@ defmodule Ludo.GameTest do
 
       refute json =~ "\"a\""
       refute json =~ "\"b\""
-
-      refute Map.has_key?(state, :players) and
-               Enum.any?(state.players, &Map.has_key?(&1, :id))
+      refute Map.has_key?(state, :players) and Enum.any?(state.players, &Map.has_key?(&1, :id))
     end
 
     test "expose les coups légaux au joueur dont c'est le tour" do
@@ -460,7 +497,6 @@ defmodule Ludo.GameTest do
       game = new_game(:vs_ai)
       assert game.status == :playing
 
-      # On joue au hasard côté humain, une IA n'est jamais bloquée plus de quelques tours.
       result =
         Enum.reduce_while(1..4000, game, fn _, acc ->
           if acc.status == :finished do
@@ -483,7 +519,7 @@ defmodule Ludo.GameTest do
         end)
 
       assert result.status == :finished, "la partie ne s'est pas terminée"
-      assert result.winner in [:red, :green, :yellow, :blue]
+      assert result.winner in [:red, :blue, :yellow, :green]
       assert Game.finished_count(result, result.winner) == 4
     end
 
@@ -505,13 +541,13 @@ defmodule Ludo.GameTest do
                 end
 
               {:error, _} ->
-                g = %{acc | dice: nil}
-                Game.move(%{g | dice: nil}, "inconnu", 0) |> elem(1) |> then(fn _ -> g end)
+                acc
             end
           end
 
         for {_color, tokens} <- next.tokens, position <- tokens do
-          assert position == :base or (is_integer(position) and position >= 0 and position <= 61),
+          assert position == :base or
+                   (is_integer(position) and position >= 0 and position <= finish()),
                  "position invalide : #{inspect(position)}"
         end
 
