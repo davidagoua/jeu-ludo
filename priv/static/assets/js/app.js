@@ -72,10 +72,6 @@
   let mySeat = null;
   let lastState = null;
   let lastDice = null;
-  // Dernier lancer réellement affiché, et par qui : le serveur remet `dice` à
-  // zéro dès que le pion a bougé, or les autres joueurs doivent pouvoir lire le
-  // numéro joué. On garde donc la valeur jusqu'au lancer suivant.
-  let lastRoll = { value: null, color: null };
   let spinTimer = null;
   // Le plateau est rendu en 3D ; le module s'annonce par l'événement
   // `ludo3dready` (l'ordre de chargement des scripts n'est pas garanti).
@@ -393,11 +389,8 @@
       dice.disabled = true;
       dice.classList.remove("ready");
       hint.textContent = winner ? winner.name + " remporte la partie." : "";
-      showDice(
-        state.dice !== null ? state.dice : lastRoll.value,
-        null, // plus de tour en cours : pas de liseré
-        rollerName(state)
-      );
+      // la partie est finie : plus de tour, donc plus de dé
+      showDice(null, null, null);
       return;
     }
 
@@ -406,16 +399,13 @@
       (mine ? "À vous de jouer" : "Au tour de " + state.turn_name) +
       (state.turn_is_bot ? " (IA)" : "");
 
-    // Un nouveau lancer remplace le précédent ; sinon on garde la face affichée,
-    // même après que le pion a bougé et que le serveur a remis `dice` à zéro.
-    if (state.dice !== null) {
-      lastRoll = { value: state.dice, color: state.turn_color };
-    }
-
+    // Le dé n'affiche sa valeur que pendant le tour de celui qui l'a lancée :
+    // dès que le pion est joué, le serveur remet `dice` à zéro et le dé
+    // redevient blanc. Chaque joueur a le sien sur le plateau.
     // Pendant que le joueur lance son propre dé, c'est l'animation qui pilote la
     // face affichée : on ne l'écrase pas avec l'état du serveur.
     if (!spinTimer) {
-      showDice(lastRoll.value, state.turn_color, rollerName(state));
+      showDice(state.dice, state.turn_color, state.turn_name);
     }
 
     // Le dé est le bouton : actif seulement quand c'est à nous et qu'il n'a pas
@@ -435,22 +425,14 @@
     }
   }
 
-  /** Nom du joueur qui a lancé le numéro affiché. */
-  function rollerName(state) {
-    if (!lastRoll.color || !state) return null;
-    const roller = state.players.find((p) => p.color === lastRoll.color);
-    return roller && roller.name;
-  }
-
   /**
    * Affiche une face du dé du panneau, avec le liseré du joueur dont c'est le
    * tour.
    *
-   * Le numéro affiché reste celui du dernier lancer — les autres joueurs doivent
-   * pouvoir le lire — mais la couleur, elle, suit la main en cours : c'est elle
-   * qui dit à qui c'est de jouer.
+   * `value` vaut `null` dès que le pion a été joué : le dé est alors blanc, comme
+   * sur le plateau. Le liseré, lui, suit la main en cours.
    */
-  function showDice(value, turnColor, rollerNameValue) {
+  function showDice(value, turnColor, turnName) {
     if (spinTimer) return;
 
     const dice = $("#dice");
@@ -474,7 +456,7 @@
       "aria-label",
       value === null
         ? "dé non lancé"
-        : "dé : " + value + (rollerNameValue ? ", lancé par " + rollerNameValue : "")
+        : "dé : " + value + (turnName ? ", lancé par " + turnName : "")
     );
 
     if (value !== null && changed) {
@@ -529,9 +511,6 @@
     push(game, "roll", {}, (reply) => {
       lastState = reply.state;
       stopSpin(reply.state.dice);
-      if (reply.state.dice !== null) {
-        lastRoll = { value: reply.state.dice, color: reply.state.turn_color };
-      }
       renderState(reply.state);
     });
   }
@@ -561,7 +540,6 @@
     dice.classList.remove("rolling");
     if (three() && three().isReady()) three().setRolling(false);
 
-    if (value !== null) lastRoll = { value: value, color: myColor };
     showDice(value, value === null ? null : myColor, null);
   }
 

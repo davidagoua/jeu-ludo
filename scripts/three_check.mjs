@@ -305,14 +305,17 @@ section("Graphe de scène");
 // Three.js sait construire une scène sans contexte WebGL : seul WebGLRenderer
 // en a besoin. On peut donc vérifier ici que le plateau est réellement bâti,
 // et pas seulement que les formules de position sont justes.
-const { root, tokensGroup, diceGroup } = board.buildScene(geo);
+const { root, tokensGroup, diceByColor } = board.buildScene(geo);
 
 const objects = [];
 root.traverse((o) => objects.push(o));
 const kinds = objects.filter((o) => o.userData && o.userData.kind);
 const of = (kind) => kinds.filter((o) => o.userData.kind === kind);
 
-check("la scène contient le plateau, les pions et le dé", Boolean(root && tokensGroup && diceGroup));
+check(
+  "la scène contient le plateau, les pions et les dés",
+  Boolean(root && tokensGroup && diceByColor)
+);
 
 // 56 cases d'anneau + 4 colonnes de 5 cases
 check("les 76 cases sont construites", of("cell").length === 76, of("cell").length);
@@ -321,8 +324,8 @@ check("les 4 bases sont construites", of("base").length === 4, of("base").length
 check("les 16 emplacements de base sont construits", of("slot").length === 16, of("slot").length);
 check("les 4 triangles du centre sont construits", of("center").length === 4, of("center").length);
 check("les 16 pions sont construits", of("token").length === 16, of("token").length);
-check("le dé est construit", of("dice").length === 1, of("dice").length);
-check("les 21 points du dé sont construits", of("pip").length === 21, of("pip").length);
+check("un dé par joueur est construit", of("dice").length === 4, of("dice").length);
+check("les 21 points de chaque dé sont construits", of("pip").length === 84, of("pip").length);
 
 // les cases de départ portent la couleur de leur joueur
 let cellsOk = true;
@@ -395,11 +398,19 @@ check(
   centresHors.length
 );
 
-check(
-  "le dé est posé au-dessus du plateau",
-  diceGroup.position.y > 0.5 && Math.abs(diceGroup.position.x) < 7.5,
-  diceGroup.position.toArray()
-);
+// chaque dé est posé à l'extérieur du plateau, du côté de son camp
+let desOk = true;
+for (const [color, node] of diceByColor) {
+  const [bx, by] = geo.base_areas[color];
+  const p = node.group.position;
+  const bonCote = Math.sign(p.x) === Math.sign(bx > 0 ? 1 : -1) && Math.sign(p.z) === Math.sign(by > 0 ? 1 : -1);
+
+  if (!bonCote || Math.abs(p.x) <= 7.5 || Math.abs(p.z) <= 7.5 || p.y <= 0.5) {
+    desOk = false;
+    console.log("    dé " + color + " mal posé : " + JSON.stringify(p.toArray()));
+  }
+}
+check("chaque dé est posé à l'extérieur, du côté de son camp", desOk);
 
 /* --------------------------------------------------- positions appliquées */
 
@@ -650,26 +661,24 @@ check(
   Math.abs(pose.x - enLair.x) < 1e-9 && Math.abs(pose.y - enLair.y) < 1e-9
 );
 
-// 5. le dé doit rester visible et cliquable, sous le plateau
-const diceProjection = board.project({ x: 0, y: 0, z: 8.6 });
-check(
-  "le dé est sous le plateau, dans le cadre",
-  Math.abs(diceProjection.x) < 1 && Math.abs(diceProjection.y) < 1 && diceProjection.y < 0,
-  diceProjection
-);
-
-const { diceGroup: dice3d } = board.buildScene(geo);
-check(
-  "le dé est posé hors du plateau",
-  Math.abs(dice3d.position.z) > 7.5 || Math.abs(dice3d.position.x) > 7.5,
-  dice3d.position.toArray()
-);
+// 5. les quatre dés doivent rester dans le cadre, donc cliquables
+let desCadres = true;
+for (const coin of [
+  { x: -8.7, y: 0, z: -8.7 },
+  { x: 8.7, y: 0, z: -8.7 },
+  { x: -8.7, y: 0, z: 8.7 },
+  { x: 8.7, y: 0, z: 8.7 }
+]) {
+  const p = board.project(coin);
+  if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) desCadres = false;
+}
+check("les quatre dés sont dans le cadre", desCadres);
 
 board.setView({ zoom: limites.minZoom });
 
 /* --------------------------------------------------- le dé garde sa face */
 
-section("Le dé garde sa face");
+section("Un dé par joueur, blanc hors de son tour");
 
 function etatDe(overrides) {
   return Object.assign(
@@ -688,19 +697,90 @@ function etatDe(overrides) {
   );
 }
 
-board.update(etatDe({ dice: 5 }), geo.players[0]);
-check("le dé 3D prend la valeur reçue", board.diceValue() === 5, board.diceValue());
+// aucun lancer : les quatre dés sont blancs
+board.update(etatDe({ dice: null }), geo.players[0]);
+check(
+  "sans lancer, les quatre dés sont blancs",
+  Object.values(board.dicePipsVisible()).every((visible) => visible === false),
+  board.dicePipsVisible()
+);
 
-// le serveur remet `dice` à zéro dès que le pion a bougé : la face ne doit pas
-// disparaître pour autant, les autres joueurs doivent pouvoir la lire
+// le rouge lance 5 : seul son dé s'allume
+board.update(etatDe({ dice: 5, turn_color: geo.players[0] }), geo.players[0]);
+check("le dé du joueur en cours prend la valeur", board.diceValue() === 5, board.diceValue());
+check(
+  "seul le dé du joueur en cours s'allume",
+  JSON.stringify(board.dicePipsVisible()) ===
+    JSON.stringify({ red: true, blue: false, yellow: false, green: false }),
+  board.dicePipsVisible()
+);
+
+// il joue son pion : son dé redevient blanc
+board.update(etatDe({ dice: null, turn_color: geo.players[0] }), geo.players[0]);
+check(
+  "après avoir joué, son dé redevient blanc",
+  board.dicePipsVisible().red === false,
+  board.dicePipsVisible()
+);
+
+// la main passe au bleu, qui lance 2
+board.update(etatDe({ dice: 2, turn_color: geo.players[1] }), geo.players[0]);
+check("c'est au tour du dé bleu de s'allumer", board.diceValues().blue === 2, board.diceValues());
+check(
+  "le dé rouge reste blanc",
+  board.dicePipsVisible().red === false,
+  board.dicePipsVisible()
+);
+check(
+  "chaque dé a sa propre valeur",
+  board.diceValues().red === null && board.diceValues().blue === 2,
+  board.diceValues()
+);
+
+/* ------------------------------------------------------- clic sur son dé */
+
+section("Seul son propre dé réagit au clic");
+
+let lancers = 0;
+board.setHandlers({ roll: () => lancers++, token: () => {} });
+
+const offset = board.diceOffset();
+const ndc = (x, z) => board.project({ x, y: 0, z });
+
+// le rouge a la main, dé non lancé
+board.update(etatDe({ dice: null, turn_color: geo.players[0] }), geo.players[0]);
+board.setView({ zoom: limites.minZoom });
+
+const coinRouge = ndc(-offset, -offset);
+const coinBleu = ndc(offset, -offset);
+const coinJaune = ndc(offset, offset);
+const coinVert = ndc(-offset, offset);
+
+check("le dé rouge est atteint par un clic", board.diceAt(coinRouge.x, coinRouge.y) === "red");
+check("le dé bleu aussi", board.diceAt(coinBleu.x, coinBleu.y) === "blue");
+
+board.clickAt(coinBleu.x, coinBleu.y);
+check("cliquer sur le dé d'un autre joueur ne lance rien", lancers === 0, lancers);
+
+board.clickAt(coinRouge.x, coinRouge.y);
+check("cliquer sur son propre dé lance", lancers === 1, lancers);
+
+// la main passe au bleu : c'est son dé qui devient actif
 board.update(etatDe({ dice: null, turn_color: geo.players[1] }), geo.players[0]);
-check("le dé 3D garde sa face après le coup", board.diceValue() === 5, board.diceValue());
 
-board.update(etatDe({ dice: null, turn_color: geo.players[2] }), geo.players[0]);
-check("la face tient sur plusieurs états successifs", board.diceValue() === 5, board.diceValue());
+board.clickAt(coinRouge.x, coinRouge.y);
+check("l'ancien joueur ne peut plus lancer", lancers === 1, lancers);
 
-board.update(etatDe({ dice: 2, turn_color: geo.players[2] }), geo.players[0]);
-check("un nouveau lancer change la face", board.diceValue() === 2, board.diceValue());
+board.clickAt(coinBleu.x, coinBleu.y);
+check("le nouveau joueur peut lancer", lancers === 2, lancers);
+
+// un clic dans le vide ne fait rien
+const vide = board.clickAt(0.99, -0.99);
+check("un clic à côté ne déclenche rien", vide === null, vide);
+
+// les autres dés existent bien, à leur place
+check("le dé jaune est à son coin", board.diceAt(coinJaune.x, coinJaune.y) === "yellow");
+check("le dé vert est à son coin", board.diceAt(coinVert.x, coinVert.y) === "green");
 
 /* ----------------------------------------------------------------- résultat */
 

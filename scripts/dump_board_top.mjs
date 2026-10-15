@@ -95,7 +95,7 @@ root.traverse((o) => {
   if (kind === "dice") {
     const p = new THREE.Vector3();
     o.getWorldPosition(p);
-    items.push({ kind, x: p.x, z: p.z });
+    items.push({ kind, color: o.userData.color, x: p.x, z: p.z });
     return;
   }
 
@@ -107,7 +107,19 @@ root.traverse((o) => {
   items.push({ kind, color, x: o.position.x, z: o.position.z });
 });
 
-const diceNode = items.find((i) => i.kind === "dice");
+// Un dé par joueur : sa position, sa valeur affichée (ou rien s'il est blanc).
+const valeurs = board.diceValues();
+const pipsVisibles = board.dicePipsVisible();
+
+const dice = items
+  .filter((i) => i.kind === "dice")
+  .map((i) => ({
+    color: i.color,
+    x: i.x,
+    z: i.z,
+    value: valeurs[i.color] === undefined ? null : valeurs[i.color],
+    pips: Boolean(pipsVisibles[i.color])
+  }));
 
 writeFileSync(
   outPath,
@@ -116,11 +128,7 @@ writeFileSync(
       board: board.BOARD,
       view: board.viewLimits(),
       centerZ: board.viewCenterZ(),
-      dice: {
-        x: diceNode ? diceNode.x : 0,
-        z: diceNode ? diceNode.z : 0,
-        value: board.diceValue()
-      },
+      dice,
       items
     },
     null,
@@ -129,5 +137,13 @@ writeFileSync(
 );
 
 console.log(
-  "écrit " + outPath + " : " + items.length + " éléments, dé sur " + board.diceValue()
+  "écrit " +
+    outPath +
+    " : " +
+    items.length +
+    " éléments, " +
+    dice.length +
+    " dés (" +
+    dice.map((d) => d.color + "=" + (d.value === null ? "blanc" : d.value)).join(", ") +
+    ")"
 );

@@ -51,11 +51,14 @@ téléporter, et la zone du joueur dont c'est le tour s'illumine. La projection 
 orthographique, donc le plateau reste un carré parfait à l'écran, quel que soit
 son contenu.
 
-Le dé est un vrai cube qui roule avant de s'arrêter sur la valeur tirée, et il
-**garde ce numéro affiché jusqu'au lancer suivant** : le serveur remet le dé à
-zéro dès que le pion a bougé, mais les autres joueurs doivent pouvoir lire ce qui
-a été joué. Le dé porte par ailleurs un liseré à la couleur du joueur **dont c'est
-le tour**, pour qu'on voie d'un coup d'œil à qui c'est de jouer.
+**Chaque joueur a son dé, posé à l'extérieur de son camp** (en diagonale, dans le
+coin). Un dé dont le joueur n'a pas la main — ou qui vient de jouer son pion —
+reste **blanc**, sans aucun point : seul le dé du joueur en cours montre sa
+valeur, le temps qu'il joue son coup. Cliquer sur le dé d'un autre joueur ne fait
+rien.
+
+Le dé du panneau latéral suit la même règle et porte un liseré à la couleur du
+joueur dont c'est le tour.
 
 Le dé du panneau latéral suit le même état : il reste présent comme repère et
 comme commande accessible au clavier et aux lecteurs d'écran.
@@ -177,7 +180,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
-node scripts/geometry_check.mjs /tmp/geometry.json   # 41 vérifications : panneau, dé, bannière
+node scripts/geometry_check.mjs /tmp/geometry.json   # 37 vérifications : panneau, dé, bannière
 node scripts/three_check.mjs /tmp/geometry.json      # 58 vérifications : scène, cadrage, dé
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)

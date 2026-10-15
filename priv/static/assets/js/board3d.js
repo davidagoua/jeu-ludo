@@ -33,16 +33,17 @@ const HOP = 0.34; // hauteur d'un petit bond
 const SPREAD = 0.17; // écartement de plusieurs pions sur une même case
 // Le dé est posé sous le plateau. En vue de dessus il paraîtrait minuscule à sa
 // taille d'origine : il est dimensionné par rapport au plateau.
-const DICE_SIZE = 1.5;
-const DICE_X = 0;
+// Un dé par joueur, posé en diagonale à l'extérieur de son camp. Le dé d'un
+// joueur qui n'a pas la main — ou qui a fini de jouer — reste blanc, sans point.
+const DICE_SIZE = 1.4;
 const DICE_Y = DICE_SIZE / 2 + 0.03;
-const DICE_Z = BOARD / 2 + 0.4 + DICE_SIZE / 2;
+const DICE_OFFSET = BOARD / 2 + 0.5 + DICE_SIZE / 2;
 
-// Étendue à couvrir : le plateau, puis la rangée du dé sous le plateau.
-const VIEW_TOP = -(BOARD / 2 + FRAME_MARGIN);
-const VIEW_BOTTOM = DICE_Z + DICE_SIZE / 2 + 0.45;
-const VIEW_HALF = Math.max(VIEW_BOTTOM - VIEW_TOP, BOARD + 2 * FRAME_MARGIN) / 2;
-const VIEW_CENTER_Z = (VIEW_TOP + VIEW_BOTTOM) / 2;
+// Étendue à couvrir : le plateau et les quatre dés.
+const VIEW_TOP = -(DICE_OFFSET + DICE_SIZE / 2 + 0.45);
+const VIEW_BOTTOM = -VIEW_TOP;
+const VIEW_HALF = (VIEW_BOTTOM - VIEW_TOP) / 2;
+const VIEW_CENTER_Z = 0;
 
 /* ------------------------------------------------------- fonctions pures */
 
@@ -176,15 +177,15 @@ let camera = null;
 let root = null;
 let boardGroup = null;
 let tokensGroup = null;
-let diceGroup = null;
-let dicePivot = null;
+const diceByColor = new Map(); // couleur -> { group, pivot, pips, target, value, rolling }
 let highlightGroup = null;
 
 let geo = null;
 const tokenNodes = new Map(); // "color:index" -> group
 const basePlates = new Map(); // color -> mesh
 let animations = [];
-let dice = { value: null, rolling: false, target: new THREE.Quaternion() };
+// pas de dé unique : chaque joueur a le sien (voir `diceByColor`)
+let activeDice = { color: null };
 let activeBase = { color: null, t: 0 };
 let lastFrame = 0;
 let raycaster = null;
@@ -199,7 +200,11 @@ export function framePoints() {
     [BOARD / 2, 0, -BOARD / 2],
     [-BOARD / 2, 0, BOARD / 2],
     [BOARD / 2, 0, BOARD / 2],
-    [DICE_X, 0, VIEW_BOTTOM] // bas de la rangée du dé
+    // les quatre dés, posés aux quatre coins
+    [-DICE_OFFSET, 0, -DICE_OFFSET],
+    [DICE_OFFSET, 0, -DICE_OFFSET],
+    [-DICE_OFFSET, 0, DICE_OFFSET],
+    [DICE_OFFSET, 0, DICE_OFFSET]
   ];
 }
 
@@ -373,20 +378,25 @@ function buildBoard() {
   }
 }
 
-function buildDice(color = "#f7fafc") {
-  diceGroup = new THREE.Group();
-  dicePivot = new THREE.Group();
-  diceGroup.add(dicePivot);
+/**
+ * Construit le dé d'un joueur et le pose à l'extérieur de son camp, en
+ * diagonale. Les points sont conservés pour pouvoir les masquer : c'est ainsi
+ * qu'un dé « en blanc » est représenté.
+ */
+function buildDiceFor(color) {
+  const group = new THREE.Group();
+  const pivot = new THREE.Group();
+  group.add(pivot);
 
   const size = DICE_SIZE;
   const k = size / 0.78; // les décalages ci-dessous sont donnés pour un dé de 0,78
   const cube = new THREE.Mesh(
     new THREE.BoxGeometry(size, size, size),
-    material(color, { roughness: 0.35, metalness: 0.02 })
+    material("#f7fafc", { roughness: 0.35, metalness: 0.02 })
   );
   cube.castShadow = true;
-  cube.userData = { kind: "dice" };
-  dicePivot.add(cube);
+  cube.userData = { kind: "dice", color };
+  pivot.add(cube);
 
   // points : de petites sphères posées sur chaque face
   const pipMat = material("#1b2330", { roughness: 0.4 });
@@ -396,7 +406,12 @@ function buildDice(color = "#f7fafc") {
     [2, [[-0.2, 0.2], [0.2, -0.2]], [0, 0, off], [0, 0, 1]],
     [3, [[-0.22, 0.22], [0, 0], [0.22, -0.22]], [off, 0, 0], [1, 0, 0]],
     [4, [[-0.22, 0.22], [0.22, 0.22], [-0.22, -0.22], [0.22, -0.22]], [-off, 0, 0], [-1, 0, 0]],
-    [5, [[-0.22, 0.22], [0.22, 0.22], [0, 0], [-0.22, -0.22], [0.22, -0.22]], [0, 0, -off], [0, 0, -1]],
+    [
+      5,
+      [[-0.22, 0.22], [0.22, 0.22], [0, 0], [-0.22, -0.22], [0.22, -0.22]],
+      [0, 0, -off],
+      [0, 0, -1]
+    ],
     [
       6,
       [[-0.22, 0.24], [0.22, 0.24], [-0.22, 0], [0.22, 0], [-0.22, -0.24], [0.22, -0.24]],
@@ -405,23 +420,48 @@ function buildDice(color = "#f7fafc") {
     ]
   ];
 
-  for (const [, pips, normal, face] of layout) {
-    for (const [u, v] of pips) {
+  const pips = [];
+
+  for (const [, spots, normal, face] of layout) {
+    for (const [u, v] of spots) {
       const pip = new THREE.Mesh(new THREE.SphereGeometry(0.062 * k, 12, 10), pipMat);
-      // on place le point dans le plan de sa face
       const pu = u * k;
       const pv = v * k;
+
       if (face[0] !== 0) pip.position.set(normal[0], pv, -pu);
       else if (face[1] !== 0) pip.position.set(pu, normal[1], pv);
       else pip.position.set(pu, pv, normal[2]);
-      pip.userData = { kind: "pip" };
-      dicePivot.add(pip);
+
+      pip.userData = { kind: "pip", color };
+      pip.visible = false; // blanc tant que le joueur n'a rien lancé
+      pips.push(pip);
+      pivot.add(pip);
     }
   }
 
-  // devant le plateau : à 6,4 il reposait sur la colonne verte
-  diceGroup.position.set(DICE_X, DICE_Y, DICE_Z);
-  root.add(diceGroup);
+  // chaque camp est dans un coin : le dé se pose en diagonale, à l'extérieur
+  const [bx, by] = geo.base_areas[color];
+  const signX = bx > 0 ? 1 : -1;
+  const signZ = by > 0 ? 1 : -1;
+  group.position.set(signX * DICE_OFFSET, DICE_Y, signZ * DICE_OFFSET);
+
+  root.add(group);
+
+  return {
+    color,
+    group,
+    pivot,
+    pips,
+    target: new THREE.Quaternion(),
+    value: null,
+    rolling: false
+  };
+}
+
+function buildDice() {
+  for (const color of geo.players) {
+    diceByColor.set(color, buildDiceFor(color));
+  }
 }
 
 function buildTokens() {
@@ -633,14 +673,29 @@ export function update(state, myColor) {
   // zone du joueur dont c'est le tour
   activeBase.color = state.status === "playing" ? state.turn_color : null;
 
-  // Dé : la face affichée ne change QUE sur un nouveau lancer. Le serveur remet
-  // `dice` à zéro dès que le pion a bougé, mais les autres joueurs doivent
-  // pouvoir lire le numéro joué : on conserve donc la dernière valeur.
-  if (state.dice !== null && !dice.rolling) {
-    dice.value = state.dice;
-    const [rx, ry, rz] = DICE_ORIENTATIONS[state.dice] || [0, 0, 0];
-    dice.target.setFromEuler(new THREE.Euler(rx, ry, rz));
+  // Dés : celui du joueur en cours montre sa valeur tant qu'il n'a pas joué son
+  // pion ; dès qu'il a fini — et pour tous les autres joueurs — il reste blanc.
+  for (const color of geo.players) {
+    const node = diceByColor.get(color);
+    if (!node) continue;
+
+    const value = state.turn_color === color && state.dice !== null ? state.dice : null;
+
+    if (value !== null) {
+      if (node.value !== value) {
+        node.value = value;
+        const [rx, ry, rz] = DICE_ORIENTATIONS[value] || [0, 0, 0];
+        node.target.setFromEuler(new THREE.Euler(rx, ry, rz));
+      }
+    } else {
+      node.value = null;
+    }
+
+    // « en blanc » : le cube reste, mais sans aucun point
+    for (const pip of node.pips) pip.visible = value !== null;
   }
+
+  activeDice.color = state.status === "playing" ? state.turn_color : null;
 }
 
 /**
@@ -650,16 +705,19 @@ export function update(state, myColor) {
 function updateSimulation(dt) {
   stepAnimations(dt);
 
-  // dé : rotation cible + tremblement pendant le lancer
-  if (dicePivot) {
-    if (dice.rolling) {
-      dicePivot.rotation.x += dt * 9;
-      dicePivot.rotation.y += dt * 7;
-      dicePivot.rotation.z += dt * 5;
+  // dés : rotation vers la face tirée, et tremblement pendant un lancer
+  for (const node of diceByColor.values()) {
+    if (node.rolling) {
+      node.pivot.rotation.x += dt * 9;
+      node.pivot.rotation.y += dt * 7;
+      node.pivot.rotation.z += dt * 5;
     } else {
-      dicePivot.quaternion.slerp(dice.target, Math.min(1, dt * 9));
+      node.pivot.quaternion.slerp(node.target, Math.min(1, dt * 9));
     }
-    diceGroup.position.y = DICE_Y + Math.sin(performance.now() / 700) * 0.05;
+
+    // le dé du joueur en cours respire légèrement, les autres restent posés
+    const actif = node.color === activeDice.color;
+    node.group.position.y = DICE_Y + (actif ? Math.sin(performance.now() / 700) * 0.06 + 0.05 : 0);
   }
 
   // pulsation de la base du joueur dont c'est le tour
@@ -704,16 +762,25 @@ function loop() {
 
 /* ------------------------------------------------------------------ entrée */
 
-function pick(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+/**
+ * Traite un clic aux coordonnées normalisées de l'écran (-1 à 1).
+ *
+ * Chaque joueur a son dé : seul celui du joueur en cours déclenche un lancer.
+ * Renvoie ce qui a été touché, ce qui rend le comportement vérifiable.
+ */
+function activate(ndcX, ndcY) {
+  // Les matrices monde sont normalement à jour grâce au rendu de la frame
+  // précédente : on s'en assure, sans quoi un clic arrivé avant le premier
+  // rendu toucherait des objets restés à l'origine.
+  root.updateMatrixWorld(true);
+
+  pointer.set(ndcX, ndcY);
   raycaster.setFromCamera(pointer, camera);
 
-  const diceHits = raycaster.intersectObject(diceGroup, true);
-  if (diceHits.length && handlers.roll) {
-    handlers.roll();
-    return true;
+  const color = diceAt(ndcX, ndcY);
+  if (color) {
+    if (color === activeDice.color && handlers.roll) handlers.roll();
+    return "dice:" + color;
   }
 
   const hits = raycaster.intersectObjects([...tokenNodes.values()], true);
@@ -722,11 +789,41 @@ function pick(event) {
     while (node && !node.userData.color) node = node.parent;
     if (node && node.userData.ring.visible && handlers.token) {
       handlers.token(node.userData.index);
-      return true;
+      return "token:" + node.userData.color + ":" + node.userData.index;
     }
   }
 
-  return false;
+  return null;
+}
+
+function pick(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  return activate(x, y);
+}
+
+/** Dé touché par un clic aux coordonnées écran, ou `null`. */
+export function diceAt(ndcX, ndcY) {
+  root.updateMatrixWorld(true);
+  pointer.set(ndcX, ndcY);
+  raycaster.setFromCamera(pointer, camera);
+
+  for (const [color, node] of diceByColor) {
+    if (raycaster.intersectObject(node.group, true).length) return color;
+  }
+
+  return null;
+}
+
+/** Simule un clic (vérifications hors navigateur). */
+export function clickAt(ndcX, ndcY) {
+  return activate(ndcX, ndcY);
+}
+
+/** Distance d'un dé au centre du plateau. */
+export function diceOffset() {
+  return DICE_OFFSET;
 }
 
 function bindInput(canvas) {
@@ -790,10 +887,10 @@ export function buildScene(nextGeo) {
   if (geo) {
     buildBoard();
     buildTokens();
-    if (!diceGroup) buildDice();
+    if (diceByColor.size === 0) buildDice();
   }
 
-  return { scene, root, boardGroup, tokensGroup, diceGroup };
+  return { scene, root, boardGroup, tokensGroup, diceByColor };
 }
 
 export function init(canvas) {
@@ -847,7 +944,24 @@ export function project(point) {
 
 /** Face actuellement affichée par le dé (`null` avant le premier lancer). */
 export function diceValue() {
-  return dice.value;
+  const node = diceByColor.get(activeDice.color);
+  return node ? node.value : null;
+}
+
+/** Valeur affichée par chaque dé, couleur par couleur (vérifications). */
+export function diceValues() {
+  const out = {};
+  for (const [color, node] of diceByColor) out[color] = node.value;
+  return out;
+}
+
+/** Points visibles de chaque dé (`false` = dé en blanc). */
+export function dicePipsVisible() {
+  const out = {};
+  for (const [color, node] of diceByColor) {
+    out[color] = node.pips.some((pip) => pip.visible);
+  }
+  return out;
 }
 
 /** Déplace la caméra (sert aux vérifications et à un futur bouton de recadrage). */
@@ -886,7 +1000,9 @@ export function setHandlers(next) {
 }
 
 export function setRolling(value) {
-  dice.rolling = value;
+  for (const node of diceByColor.values()) {
+    node.rolling = Boolean(value) && node.color === activeDice.color;
+  }
 }
 
 /* Exposé pour app.js, qui est un script classique. */

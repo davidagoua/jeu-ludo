@@ -304,9 +304,9 @@ check(
   dice.allDescendants().filter((el) => el.classList.contains("on")).length === 0
 );
 
-/* ------------------------------------------- le dé garde le numéro joué */
+/* --------------------------------- le dé n'affiche que pendant le tour */
 
-section("Le dé garde le numéro joué");
+section("Le dé n'affiche sa valeur que pendant le tour");
 
 // Retrouve la face affichée à partir des points allumés.
 function shownFace() {
@@ -321,81 +321,50 @@ function shownFace() {
 }
 
 api.renderState(syntheticState({ status: "waiting", dice: null }));
-check("avant le premier lancer, le dé est vide", shownFace() === null);
+check("avant le premier lancer, le dé est blanc", shownFace() === null);
 
-// scénario réel : le rouge lance 3, joue son pion, la main passe au bleu
+// le rouge lance 3 : son dé l'affiche
 api.renderState(syntheticState({ dice: 3, turn: 0, turn_color: geo.players[0] }));
 check("un lancer affiche son numéro", shownFace() === 3, shownFace());
-
-api.renderState(syntheticState({ dice: null, turn: 1, turn_color: geo.players[1] }));
-check(
-  "après le coup, le numéro reste affiché jusqu'au joueur suivant",
-  shownFace() === 3,
-  shownFace()
-);
-check(
-  "l'étiquette dit qui a lancé",
-  String(dice.attributes["aria-label"]).indexOf("Joueur 0") !== -1,
-  dice.attributes["aria-label"]
-);
 check("le dé porte un liseré de couleur", dice.classList.contains("current"));
 check(
-  "le liseré prend la couleur du joueur dont c'est le tour, pas du lanceur",
-  dice.style["--turn-color"] === geo.colors[geo.players[1]],
-  { attendu: geo.colors[geo.players[1]], obtenu: dice.style["--turn-color"] }
-);
-check(
-  "le numéro affiché reste bien celui du lanceur précédent",
-  shownFace() === 3,
-  shownFace()
-);
-
-// le joueur suivant lance à son tour : là seulement le numéro change
-api.renderState(syntheticState({ dice: 6, turn: 1, turn_color: geo.players[1] }));
-check("un nouveau lancer remplace le précédent", shownFace() === 6, shownFace());
-check(
-  "le liseré reste celui du joueur en cours",
-  dice.style["--turn-color"] === geo.colors[geo.players[1]],
+  "le liseré prend la couleur du joueur dont c'est le tour",
+  dice.style["--turn-color"] === geo.colors[geo.players[0]],
   dice.style["--turn-color"]
 );
 
-// la main passe à un troisième joueur : le liseré le suit, le numéro ne bouge pas
-api.renderState(syntheticState({ dice: null, turn: 2, turn_color: geo.players[2] }));
+// il joue son pion : le serveur remet `dice` à zéro et le dé redevient blanc
+api.renderState(syntheticState({ dice: null, turn: 0, turn_color: geo.players[0] }));
 check(
-  "quand la main passe, le liseré suit le nouveau joueur",
-  dice.style["--turn-color"] === geo.colors[geo.players[2]],
-  { attendu: geo.colors[geo.players[2]], obtenu: dice.style["--turn-color"] }
+  "une fois le pion joué, le dé redevient blanc",
+  shownFace() === null,
+  shownFace()
 );
-check("et le numéro affiché ne change pas", shownFace() === 6, shownFace());
 
-// en fin de partie il n'y a plus de tour en cours : plus de liseré
+// un 6 donne un tour supplémentaire : le dé est blanc jusqu'au lancer suivant
+api.renderState(syntheticState({ dice: 6, turn: 0, turn_color: geo.players[0] }));
+check("le tour supplémentaire permet de relancer", shownFace() === 6, shownFace());
+
+api.renderState(syntheticState({ dice: null, turn: 0, turn_color: geo.players[0] }));
+check("et le dé redevient blanc après le coup", shownFace() === null, shownFace());
+
+// la main passe au bleu, qui n'a pas encore lancé : blanc aussi
+api.renderState(syntheticState({ dice: null, turn: 1, turn_color: geo.players[1] }));
+check(
+  "le joueur suivant commence avec un dé blanc",
+  shownFace() === null,
+  shownFace()
+);
+
+api.renderState(syntheticState({ dice: 2, turn: 1, turn_color: geo.players[1] }));
+check("et affiche son propre numéro", shownFace() === 2, shownFace());
+
+// en fin de partie, plus de tour : plus de liseré
 api.renderState(
   syntheticState({ status: "finished", winner: geo.players[1], turn_color: geo.players[1] })
 );
 check("en fin de partie, plus de liseré", !dice.classList.contains("current"));
-
-// un 6 donne un tour supplémentaire : le numéro ne doit pas disparaître
-api.renderState(syntheticState({ dice: null, turn: 1, turn_color: geo.players[1] }));
-check(
-  "après un 6 et un tour supplémentaire, le 6 reste affiché",
-  shownFace() === 6,
-  shownFace()
-);
-
-// le numéro ne doit jamais changer tout seul : on rejoue le même état
-api.renderState(syntheticState({ dice: null, turn: 1, turn_color: geo.players[1], version: 9 }));
-api.renderState(syntheticState({ dice: null, turn: 1, turn_color: geo.players[1], version: 10 }));
-check(
-  "le numéro ne change pas tant que personne ne relance",
-  shownFace() === 6,
-  shownFace()
-);
-
-// et il reste lisible une fois la partie terminée
-api.renderState(
-  syntheticState({ status: "finished", winner: geo.players[1], turn_color: geo.players[1] })
-);
-check("le dernier numéro reste affiché en fin de partie", shownFace() === 6, shownFace());
+check("et le dé est blanc", shownFace() === null, shownFace());
 
 /* -------------------------------------------------------------- bannière */
 
