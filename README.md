@@ -55,6 +55,11 @@ aucun compte à créer.
 
 ## Disposition du plateau
 
+![Plateau de Ludo](docs/plateau.png)
+
+*Image produite depuis le SVG que le client génère réellement, lui-même construit
+à partir de `Ludo.Board.geometry/0`.*
+
 | Joueur | Base | Colonne d'arrivée | Case de départ |
 | --- | --- | --- | --- |
 | rouge | haut-gauche | bras gauche | `(1,6)` |
