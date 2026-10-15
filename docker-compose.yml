@@ -18,7 +18,7 @@ services:
     restart: unless-stopped
 
     expose:
-      - "${LUDO_PORT:-4000}:4000"
+      - "${LUDO_PORT:-4000}"
 
     environment:
       # Le serveur écoute sur 4000 à l'intérieur du conteneur.
