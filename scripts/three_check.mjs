@@ -298,6 +298,196 @@ check(
   )
 );
 
+/* ------------------------------------------------------- graphe de scène */
+
+section("Graphe de scène");
+
+// Three.js sait construire une scène sans contexte WebGL : seul WebGLRenderer
+// en a besoin. On peut donc vérifier ici que le plateau est réellement bâti,
+// et pas seulement que les formules de position sont justes.
+const { root, tokensGroup, diceGroup } = board.buildScene(geo);
+
+const objects = [];
+root.traverse((o) => objects.push(o));
+const kinds = objects.filter((o) => o.userData && o.userData.kind);
+const of = (kind) => kinds.filter((o) => o.userData.kind === kind);
+
+check("la scène contient le plateau, les pions et le dé", Boolean(root && tokensGroup && diceGroup));
+
+// 56 cases d'anneau + 4 colonnes de 5 cases
+check("les 76 cases sont construites", of("cell").length === 76, of("cell").length);
+check("les 8 étoiles sont construites", of("star").length === 8, of("star").length);
+check("les 4 bases sont construites", of("base").length === 4, of("base").length);
+check("les 16 emplacements de base sont construits", of("slot").length === 16, of("slot").length);
+check("les 4 triangles du centre sont construits", of("center").length === 4, of("center").length);
+check("les 16 pions sont construits", of("token").length === 16, of("token").length);
+check("le dé est construit", of("dice").length === 1, of("dice").length);
+check("les 21 points du dé sont construits", of("pip").length === 21, of("pip").length);
+
+// les cases de départ portent la couleur de leur joueur
+let cellsOk = true;
+for (const color of geo.players) {
+  const start = geo.ring[geo.starts[color]];
+  const tile = of("cell").find(
+    (o) => o.userData.cell[0] === start[0] && o.userData.cell[1] === start[1]
+  );
+  if (!tile || tile.userData.color !== geo.colors[color]) {
+    cellsOk = false;
+    console.log("    case de départ " + color + " : " + JSON.stringify(tile && tile.userData));
+  }
+}
+check("les cases de départ portent la couleur de leur joueur", cellsOk);
+
+// les plaques de base sont au bon endroit et de la bonne couleur
+let plaquesOk = true;
+for (const color of geo.players) {
+  const plate = of("base").find((o) => o.userData.color === color);
+  const [bx, by] = geo.base_areas[color];
+
+  if (
+    !plate ||
+    plate.userData.area[0] !== bx ||
+    plate.userData.area[1] !== by ||
+    plate.material.color.getHexString() !== geo.colors[color].replace("#", "")
+  ) {
+    plaquesOk = false;
+    console.log("    base " + color + " : " + JSON.stringify(plate && plate.userData));
+  }
+}
+check("chaque base est au bon endroit et de la bonne couleur", plaquesOk);
+
+const horsPlateau = of("cell").filter(
+  (o) => Math.abs(o.position.x) > 7.5 || Math.abs(o.position.z) > 7.5
+);
+check("aucune case ne sort du plateau", horsPlateau.length === 0, horsPlateau.length);
+
+const centresHors = of("center").filter((o) => {
+  const p = o.geometry.getAttribute("position");
+  for (let i = 0; i < p.count; i++) {
+    if (Math.abs(p.getX(i)) > 1.5 + 1e-6 || Math.abs(p.getZ(i)) > 1.5 + 1e-6) return true;
+  }
+  return false;
+});
+check(
+  "les triangles du centre tiennent dans le carré central",
+  centresHors.length === 0,
+  centresHors.length
+);
+
+check(
+  "le dé est posé au-dessus du plateau",
+  diceGroup.position.y > 0.5 && Math.abs(diceGroup.position.x) < 7.5,
+  diceGroup.position.toArray()
+);
+
+/* --------------------------------------------------- positions appliquées */
+
+section("Positions appliquées");
+
+function etatAvecPositions(positionsParCouleur, options = {}) {
+  return Object.assign(
+    {
+      status: "playing",
+      turn_color: geo.players[0],
+      dice: null,
+      legal_moves: [],
+      players: geo.players.map((color, seat) => ({
+        color,
+        seat,
+        tokens: positionsParCouleur[color] || ["base", "base", "base", "base"]
+      }))
+    },
+    options
+  );
+}
+
+board.update(etatAvecPositions({}), geo.players[0]);
+board.settle();
+
+let basesPlacees = true;
+for (const color of geo.players) {
+  for (let i = 0; i < 4; i++) {
+    const attendu = board.tokenWorldPosition(geo, color, i, "base");
+    const pose = board.tokenPositions()[color + ":" + i];
+    if (
+      !pose ||
+      Math.abs(pose.x - attendu.x) > 1e-3 ||
+      Math.abs(pose.z - attendu.z) > 1e-3 ||
+      Math.abs(pose.y - attendu.y) > 1e-3
+    ) {
+      basesPlacees = false;
+      console.log("    pion " + color + ":" + i + " -> " + JSON.stringify(pose));
+    }
+  }
+}
+check("les 16 pions se placent sur leurs emplacements de base", basesPlacees);
+
+// un pion mis sur l'anneau doit rejoindre la bonne case
+board.update(etatAvecPositions({ red: [0, 30, geo.finish, "base"] }), geo.players[0]);
+board.settle();
+
+let anneauOk = true;
+for (const [index, position] of [
+  [0, 0],
+  [1, 30],
+  [2, geo.finish]
+]) {
+  const attendu = board.tokenWorldPosition(geo, "red", index, position);
+  const pose = board.tokenPositions()["red:" + index];
+  if (!pose || Math.abs(pose.x - attendu.x) > 1e-3 || Math.abs(pose.z - attendu.z) > 1e-3) {
+    anneauOk = false;
+    console.log("    red:" + index + " position " + position + " -> " + JSON.stringify(pose));
+  }
+}
+check("un pion envoyé sur l'anneau rejoint sa case", anneauOk);
+
+// un pion capturé revient à sa base
+board.update(etatAvecPositions({ red: ["base", 0, 0, 0] }), geo.players[0]);
+board.settle();
+const retour = board.tokenPositions()["red:0"];
+const baseAttendue = board.tokenWorldPosition(geo, "red", 0, "base");
+check(
+  "un pion capturé revient à sa base",
+  Math.abs(retour.x - baseAttendue.x) < 1e-3 && Math.abs(retour.z - baseAttendue.z) < 1e-3,
+  retour
+);
+
+/* ----------------------------------------------------------- surbrillance */
+
+section("Surbrillance");
+
+board.update(
+  etatAvecPositions({}, { dice: 6, legal_moves: [0, 2] }),
+  geo.players[0]
+);
+check(
+  "les pions jouables du joueur local s'illuminent",
+  JSON.stringify(board.highlightedTokens()) === JSON.stringify(["red:0", "red:2"]),
+  board.highlightedTokens()
+);
+
+board.update(
+  etatAvecPositions({}, { turn_color: geo.players[1], dice: 6, legal_moves: [0, 1] }),
+  geo.players[0]
+);
+check(
+  "au tour d'un adversaire, aucun de nos pions ne s'illumine",
+  board.highlightedTokens().length === 0,
+  board.highlightedTokens()
+);
+
+// la face du dé suit la valeur reçue du serveur
+board.update(etatAvecPositions({}, { dice: 3 }), geo.players[0]);
+const cible = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(...board.DICE_ORIENTATIONS[3])
+);
+const faceEnHaut = new THREE.Vector3(...board.DICE_NORMALS[3]).applyQuaternion(cible);
+check(
+  "le dé s'oriente sur la valeur reçue du serveur",
+  Math.abs(faceEnHaut.y - 1) < 1e-6,
+  faceEnHaut.toArray().map((v) => Number(v.toFixed(3)))
+);
+
 /* ----------------------------------------------------------------- résultat */
 
 console.log("\n== Résultat ==");

@@ -163,7 +163,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
 node scripts/geometry_check.mjs /tmp/geometry.json   # 26 vérifications : panneau, dé, bannière
-node scripts/three_check.mjs /tmp/geometry.json      # 26 vérifications : logique 3D
+node scripts/three_check.mjs /tmp/geometry.json      # 46 vérifications : logique et scène 3D
 ```
 
 `mix test` couvre notamment la géométrie (boucle fermée, symétrie des départs,

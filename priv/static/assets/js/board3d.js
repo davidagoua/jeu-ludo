@@ -161,7 +161,7 @@ const basePlates = new Map(); // color -> mesh
 let animations = [];
 let dice = { value: null, rolling: false, target: new THREE.Quaternion() };
 let activeBase = { color: null, t: 0 };
-let clock = null;
+let lastFrame = 0;
 let raycaster = null;
 let pointer = new THREE.Vector2();
 let orbit = { azimuth: 0, elevation: 0.95, radius: 17.5, targetRadius: 17.5 };
@@ -193,6 +193,8 @@ function addTile(parent, x, y, color, height = TILE_H) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.96, height, 0.96), material(color));
   mesh.position.set(p.x, height / 2, p.z);
   mesh.receiveShadow = true;
+  // étiquetés pour que les vérifications hors navigateur inspectent la scène
+  mesh.userData = { kind: "cell", cell: [x, y], color };
   parent.add(mesh);
   return mesh;
 }
@@ -245,6 +247,7 @@ function buildBoard() {
       const p = cellToWorld(x, y);
       star.rotation.x = -Math.PI / 2;
       star.position.set(p.x, TILE_H + 0.004, p.z);
+      star.userData = { kind: "star", cell: [x, y], color: owner || null };
       boardGroup.add(star);
     }
   });
@@ -272,6 +275,7 @@ function buildBoard() {
     );
     plate.position.set(p.x, TILE_H * 0.3, p.z);
     plate.receiveShadow = true;
+    plate.userData = { kind: "base", color, area: [bx, by] };
     boardGroup.add(plate);
     basePlates.set(color, plate);
 
@@ -290,6 +294,7 @@ function buildBoard() {
         material("#000000", { transparent: true, opacity: 0.18 })
       );
       slot.position.set(c.x, TILE_H * 0.6 + 0.02, c.z);
+      slot.userData = { kind: "slot", color, cell: [sx, sy] };
       boardGroup.add(slot);
     }
   }
@@ -308,6 +313,7 @@ function buildBoard() {
     g.setIndex([0, 1, 2]);
     g.computeVertexNormals();
     const mesh = new THREE.Mesh(g, material(geo.colors[color]));
+    mesh.userData = { kind: "center", color };
     boardGroup.add(mesh);
   }
 }
@@ -323,6 +329,7 @@ function buildDice(color = "#f7fafc") {
     material(color, { roughness: 0.35, metalness: 0.02 })
   );
   cube.castShadow = true;
+  cube.userData = { kind: "dice" };
   dicePivot.add(cube);
 
   // points : de petites sphères posées sur chaque face
@@ -349,6 +356,7 @@ function buildDice(color = "#f7fafc") {
       if (face[0] !== 0) pip.position.set(normal[0], v, -u);
       else if (face[1] !== 0) pip.position.set(u, normal[1], v);
       else pip.position.set(u, v, normal[2]);
+      pip.userData = { kind: "pip" };
       dicePivot.add(pip);
     }
   }
@@ -390,7 +398,7 @@ function buildTokens() {
       ring.visible = false;
 
       group.add(body, head, ring);
-      group.userData = { color, index, ring, position: null, path: [], hop: 0 };
+      group.userData = { kind: "token", color, index, ring, position: null, path: [], hop: 0 };
       tokensGroup.add(group);
       tokenNodes.set(color + ":" + index, group);
     }
@@ -449,13 +457,22 @@ function stepAnimations(dt) {
   }
 }
 
+/**
+ * Termine immédiatement les animations en cours.
+ *
+ * Sert aux vérifications hors navigateur (il n'y a pas de boucle de rendu) et
+ * pourra servir de base à un réglage « mouvement réduit ».
+ */
+export function settle() {
+  for (let guard = 0; guard < 500 && animations.length > 0; guard++) {
+    stepAnimations(1);
+  }
+}
+
 /* ------------------------------------------------------------------ rendu */
 
 export function setGeometry(next) {
-  geo = next;
-  if (!root) return;
-  buildBoard();
-  buildTokens();
+  buildScene(next);
 }
 
 /**
@@ -581,7 +598,10 @@ function render(dt) {
 
 function loop() {
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
+  // THREE.Clock est déprécié depuis r186 : on horodate nous-mêmes la frame
+  const now = performance.now();
+  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  lastFrame = now;
   render(dt);
 }
 
@@ -650,6 +670,53 @@ function bindInput(canvas) {
 
 /* -------------------------------------------------------------------- API */
 
+/**
+ * Construit la scène et son contenu, **sans moteur de rendu**.
+ *
+ * Séparer la construction du rendu permet de vérifier le graphe de scène dans
+ * Node (`scripts/three_check.mjs`) : Three.js construit volontiers des scènes
+ * sans contexte WebGL, seul `WebGLRenderer` en a besoin. C'est la seule façon
+ * de contrôler ici que le plateau est réellement bâti correctement.
+ */
+export function buildScene(nextGeo) {
+  if (nextGeo) geo = nextGeo;
+
+  if (!scene) {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color("#0f141c");
+
+    camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
+    root = new THREE.Group();
+    scene.add(root);
+
+    scene.add(new THREE.HemisphereLight("#dbe7f5", "#0b0f14", 1.15));
+
+    const sun = new THREE.DirectionalLight("#ffffff", 1.5);
+    sun.position.set(6, 14, 8);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -11;
+    sun.shadow.camera.right = 11;
+    sun.shadow.camera.top = 11;
+    sun.shadow.camera.bottom = -11;
+    scene.add(sun);
+
+    const fill = new THREE.DirectionalLight("#8fb4ff", 0.35);
+    fill.position.set(-8, 6, -6);
+    scene.add(fill);
+
+    raycaster = new THREE.Raycaster();
+  }
+
+  if (geo) {
+    buildBoard();
+    buildTokens();
+    if (!diceGroup) buildDice();
+  }
+
+  return { scene, root, boardGroup, tokensGroup, diceGroup };
+}
+
 export function init(canvas) {
   if (renderer) return true;
 
@@ -663,31 +730,7 @@ export function init(canvas) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color("#0f141c");
-
-  camera = new THREE.PerspectiveCamera(42, 1, 0.1, 200);
-  root = new THREE.Group();
-  scene.add(root);
-
-  scene.add(new THREE.HemisphereLight("#dbe7f5", "#0b0f14", 1.15));
-
-  const sun = new THREE.DirectionalLight("#ffffff", 1.5);
-  sun.position.set(6, 14, 8);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -11;
-  sun.shadow.camera.right = 11;
-  sun.shadow.camera.top = 11;
-  sun.shadow.camera.bottom = -11;
-  scene.add(sun);
-
-  const fill = new THREE.DirectionalLight("#8fb4ff", 0.35);
-  fill.position.set(-8, 6, -6);
-  scene.add(fill);
-
-  raycaster = new THREE.Raycaster();
-  clock = new THREE.Clock();
+  buildScene();
 
   const resize = () => {
     const size = canvas.clientWidth || 600;
@@ -702,6 +745,24 @@ export function init(canvas) {
   bindInput(canvas);
   loop();
   return true;
+}
+
+/** Positions monde des pions, pour les vérifications hors navigateur. */
+export function tokenPositions() {
+  const out = {};
+  for (const [key, node] of tokenNodes) {
+    out[key] = { x: node.position.x, y: node.position.y, z: node.position.z };
+  }
+  return out;
+}
+
+/** Anneaux de surbrillance actuellement visibles, pour les vérifications. */
+export function highlightedTokens() {
+  const out = [];
+  for (const [key, node] of tokenNodes) {
+    if (node.userData.ring && node.userData.ring.visible) out.push(key);
+  }
+  return out.sort();
 }
 
 export function setHandlers(next) {
