@@ -329,6 +329,26 @@ defmodule Ludo.BoardTest do
       assert Enum.at(decoded["ring"], 55) == [0, 7]
     end
 
+    test "expose la position des bases, pour que le client n'en ait aucune en dur" do
+      geo = Board.geometry()
+
+      assert geo.base_areas == %{red: [0, 0], blue: [9, 0], yellow: [9, 9], green: [0, 9]}
+      assert Enum.sort(Map.keys(geo.base_areas)) == [:blue, :green, :red, :yellow]
+    end
+
+    test "expose l'entrée du centre, adjacente à la colonne de chaque joueur" do
+      geo = Board.geometry()
+
+      assert geo.center_entries == %{red: [6, 7], blue: [7, 6], yellow: [8, 7], green: [7, 8]}
+
+      # cohérence : l'entrée du centre est voisine de la dernière case de la
+      # colonne d'arrivée du même joueur
+      for {color, [ex, ey]} <- geo.center_entries do
+        [lx, ly] = List.last(geo.home_columns[color])
+        assert abs(ex - lx) + abs(ey - ly) == 1, "#{color} : entrée du centre non adjacente"
+      end
+    end
+
     test "les couleurs sont toutes distinctes" do
       colors = Board.geometry().colors
       assert Enum.sort(Map.keys(colors)) == [:blue, :green, :red, :yellow]

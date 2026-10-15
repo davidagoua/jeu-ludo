@@ -126,7 +126,16 @@ defmodule Ludo.Board do
     green: [{1, 10}, {4, 10}, {1, 13}, {4, 13}]
   }
 
+  # Coin haut-gauche du carré 6x6 de chaque base. Envoyé au navigateur pour que
+  # le client n'ait aucune coordonnée en dur : c'est la source des bugs de
+  # disposition, quand le plateau change d'un côté et pas de l'autre.
+  @base_areas %{red: {0, 0}, blue: {9, 0}, yellow: {9, 9}, green: {0, 9}}
+
   @center [{7, 6}, {6, 7}, {8, 7}, {7, 8}, {7, 7}]
+
+  # Case du centre par laquelle chaque joueur entre : elle détermine le triangle
+  # de sa couleur dans la zone d'arrivée.
+  @center_entries %{red: {6, 7}, blue: {7, 6}, yellow: {8, 7}, green: {7, 8}}
 
   # Cases sûres : les 4 cases de départ et les 4 cases « étoile » situées 9 cases
   # après chaque départ. Aucune capture n'y a lieu.
@@ -235,7 +244,9 @@ defmodule Ludo.Board do
       home_columns:
         Map.new(@home_columns, fn {p, cells} -> {p, Enum.map(cells, &Tuple.to_list/1)} end),
       bases: Map.new(@bases, fn {p, cells} -> {p, Enum.map(cells, &Tuple.to_list/1)} end),
+      base_areas: Map.new(@base_areas, fn {p, {x, y}} -> {p, [x, y]} end),
       center: Enum.map(@center, &Tuple.to_list/1),
+      center_entries: Map.new(@center_entries, fn {p, {x, y}} -> {p, [x, y]} end),
       safe_indexes: @safe_indexes,
       players: @players,
       colors: @colors

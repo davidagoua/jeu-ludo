@@ -300,6 +300,64 @@ check("les cases de départ portent la couleur de leur joueur", startsColoured);
 const stars = boardParts.filter((el) => el.tagName === "path").length;
 check("les 8 cases sûres portent une étoile", stars === geo.safe_indexes.length, stars);
 
+// chaque base est peinte à la position ET à la couleur données par le serveur.
+// C'est le contrôle qui manquait quand le client gardait ses propres
+// coordonnées en dur : le plateau était alors incohérent avec le serveur.
+let basesOk = true;
+for (const color of geo.players) {
+  const [bx, by] = geo.base_areas[color];
+  const found = boardParts.find(
+    (el) =>
+      el.tagName === "rect" &&
+      el.attributes.width === 6 &&
+      el.attributes.x === bx &&
+      el.attributes.y === by
+  );
+
+  if (!found || found.attributes.fill !== geo.colors[color]) {
+    basesOk = false;
+    console.log(
+      "    base " + color + " : attendue en (" + bx + "," + by + ") " + geo.colors[color] +
+        ", trouvée " + (found ? JSON.stringify(found.attributes) : "absente")
+    );
+  }
+}
+check("chaque base est peinte à la position et couleur du serveur", basesOk);
+
+// les quatre triangles du centre existent et pointent vers la colonne de leur
+// couleur, c'est-à-dire du côté de la case d'entrée donnée par le serveur.
+const triangles = boardParts.filter((el) => el.tagName === "polygon");
+check("les quatre triangles du centre sont dessinés", triangles.length === 4, triangles.length);
+
+let trianglesOk = true;
+for (const color of geo.players) {
+  const [ex, ey] = geo.center_entries[color];
+  const side =
+    ex < 7 ? "gauche" : ex > 7 ? "droite" : ey < 7 ? "haut" : "bas";
+
+  const tri = triangles.find((t) => t.attributes.fill === geo.colors[color]);
+  if (!tri) {
+    trianglesOk = false;
+    console.log("    triangle manquant pour " + color);
+    continue;
+  }
+
+  // l'apex est le centre (7,5 ; 7,5) : on vérifie l'orientation par la base
+  const pts = tri.attributes.points.split(" ").map((p) => p.split(",").map(Number));
+  const base = pts.slice(0, 2);
+  const onLeft = base.every(([x]) => x === 6);
+  const onRight = base.every(([x]) => x === 9);
+  const onTop = base.every(([, y]) => y === 6);
+  const onBottom = base.every(([, y]) => y === 9);
+
+  const actual = onLeft ? "gauche" : onRight ? "droite" : onTop ? "haut" : onBottom ? "bas" : "?";
+  if (actual !== side) {
+    trianglesOk = false;
+    console.log("    triangle " + color + " : " + actual + " au lieu de " + side);
+  }
+}
+check("chaque triangle du centre pointe vers sa colonne d'arrivée", trianglesOk);
+
 /* ------------------------------------------------------------- rendu d'état */
 
 section("Rendu des états");

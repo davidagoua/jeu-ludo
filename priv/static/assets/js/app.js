@@ -286,10 +286,13 @@
   }
 
   // ---- construction du plateau (une seule fois)
+  //
+  // Aucune coordonnée de plateau n'est écrite ici : la position des bases, les
+  // triangles du centre et la case d'arrivée d'une couleur viennent tous de la
+  // géométrie envoyée par le serveur. Avoir ces valeurs en dur des deux côtés
+  // est exactement ce qui provoque une disposition incohérente quand le plateau
+  // change d'un seul côté.
 
-  const FINISH_SPOT = { red: [6, 7], green: [7, 6], yellow: [8, 7], blue: [7, 8] };
-  const BASE_AREA = { red: [0, 0], green: [9, 0], yellow: [9, 9], blue: [0, 9] };
-  const CENTER = [7, 7];
   const NS = "http://www.w3.org/2000/svg";
 
   function svgEl(tag, attrs) {
@@ -323,8 +326,8 @@
 
     // bases : on garde une référence à chaque rectangle pour pouvoir mettre en
     // évidence la zone du joueur dont c'est le tour
-    for (const color in BASE_AREA) {
-      const [bx, by] = BASE_AREA[color];
+    for (const color of geometry.players) {
+      const [bx, by] = geometry.base_areas[color];
       const base = svgEl("rect", {
         x: bx, y: by, width: 6, height: 6, rx: 0.3,
         fill: geometry.colors[color], class: "base"
@@ -375,27 +378,31 @@
       }
     }
 
-    // centre : quatre triangles qui convergent
-    const [cx, cy] = CENTER;
-    const left = cx - 1;
-    const right = cx + 2;
-    const top = cy - 1;
-    const bottom = cy + 2;
+    // centre : un triangle par couleur, orienté vers la case par laquelle ce
+    // joueur entre dans le centre (donnée par le serveur).
+    const cx = (geometry.grid - 1) / 2;
+    const cy = (geometry.grid - 1) / 2;
     const mid = cx + 0.5;
     const middle = cy + 0.5;
 
-    const triangles = [
-      { color: "red", points: [[left, top], [left, bottom], [mid, middle]] },
-      { color: "green", points: [[left, top], [right, top], [mid, middle]] },
-      { color: "yellow", points: [[right, top], [right, bottom], [mid, middle]] },
-      { color: "blue", points: [[left, bottom], [right, bottom], [mid, middle]] }
-    ];
+    for (const color of geometry.players) {
+      const [ex, ey] = geometry.center_entries[color];
 
-    for (const tri of triangles) {
+      let corners;
+      if (ex <= cx - 1) {
+        corners = [[cx - 1, cy - 1], [cx - 1, cy + 2]]; // côté gauche
+      } else if (ex >= cx + 1) {
+        corners = [[cx + 2, cy - 1], [cx + 2, cy + 2]]; // côté droit
+      } else if (ey <= cy - 1) {
+        corners = [[cx - 1, cy - 1], [cx + 2, cy - 1]]; // côté haut
+      } else {
+        corners = [[cx - 1, cy + 2], [cx + 2, cy + 2]]; // côté bas
+      }
+
       svg.appendChild(
         svgEl("polygon", {
-          points: tri.points.map((p) => p.join(",")).join(" "),
-          fill: geometry.colors[tri.color],
+          points: corners.concat([[mid, middle]]).map((p) => p.join(",")).join(" "),
+          fill: geometry.colors[color],
           class: "center-tri"
         })
       );
@@ -429,7 +436,8 @@
       return [x + 0.5, y + 0.5];
     }
 
-    const [fx, fy] = FINISH_SPOT[color];
+    // arrivée : dans le triangle de sa couleur, au centre
+    const [fx, fy] = geo.center_entries[color];
     const offsets = [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]];
     const [ox, oy] = offsets[index] || [0, 0];
     return [fx + 0.5 + ox, fy + 0.5 + oy];
