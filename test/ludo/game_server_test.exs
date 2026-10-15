@@ -10,8 +10,8 @@ defmodule Ludo.GameServerTest do
   alias Ludo.{GameServer, Lobby}
 
   describe "bot_delay/0" do
-    test "tire un délai entre 1 et 3 secondes" do
-      assert GameServer.bot_delay_range() == {1_000, 3_000}
+    test "tire un délai entre 0,5 et 1 seconde" do
+      assert GameServer.bot_delay_range() == {500, 1_000}
       {min, max} = GameServer.bot_delay_range()
 
       samples = for _ <- 1..500, do: GameServer.bot_delay()
@@ -24,11 +24,11 @@ defmodule Ludo.GameServerTest do
       {min, max} = GameServer.bot_delay_range()
       samples = for _ <- 1..500, do: GameServer.bot_delay()
 
-      # avec 500 tirages sur 2 001 valeurs, ne pas approcher les bornes est
+      # avec 500 tirages sur 501 valeurs, ne pas approcher les bornes est
       # statistiquement impossible
-      assert Enum.min(samples) < min + 300, "le tirage ne descend pas : #{Enum.min(samples)}"
-      assert Enum.max(samples) > max - 300, "le tirage ne monte pas : #{Enum.max(samples)}"
-      assert length(Enum.uniq(samples)) > 100, "délai non aléatoire"
+      assert Enum.min(samples) < min + 120, "le tirage ne descend pas : #{Enum.min(samples)}"
+      assert Enum.max(samples) > max - 120, "le tirage ne monte pas : #{Enum.max(samples)}"
+      assert length(Enum.uniq(samples)) > 60, "délai non aléatoire"
     end
   end
 

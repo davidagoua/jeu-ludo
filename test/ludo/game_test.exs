@@ -47,6 +47,17 @@ defmodule Ludo.GameTest do
 
   # --- création ------------------------------------------------------------
 
+  # Le serveur résout lui-même les lancers que le joueur ne peut pas jouer
+  # (aucun coup, un seul, ou trois 6) : les simulations font de même.
+  defp resolve(game) do
+    if Game.auto_resolve?(game) do
+      {:ok, resumed, _events} = Game.resolve_roll(game)
+      resumed
+    else
+      game
+    end
+  end
+
   describe "création de partie" do
     test "l'hôte occupe le siège 0 et la couleur rouge" do
       game = new_game()
@@ -169,19 +180,32 @@ defmodule Ludo.GameTest do
       assert Game.legal_moves(game) == [0, 1, 2, 3]
     end
 
-    test "sans coup possible, le tour passe automatiquement" do
+    test "sans coup possible, le lancer est publié puis la main passe" do
       game = started() |> set_tokens(:red, [:base, :base, :base, :base])
+
+      # le lancer reste en place : c'est ce qui permet d'afficher le numéro tiré
       {:ok, game, _events} = Game.roll(game, "a", 3)
+      assert game.dice == 3
+      assert game.turn == 0
+      assert Game.auto_resolve?(game)
+
+      # puis le serveur résout, après avoir laissé le numéro affiché
+      {:ok, game, _events} = Game.resolve_roll(game)
       assert game.turn == 1
       assert game.dice == nil
       assert Enum.any?(game.log, &(&1.type == :stuck))
     end
 
-    test "avec un seul coup possible, il est joué automatiquement" do
+    test "avec un seul coup possible, le serveur l'enchaîne" do
       game = started() |> set_tokens(:red, [0, finish(), finish(), finish()])
 
       {:ok, game, _events} = Game.roll(game, "a", 6)
-      # le pion est déjà passé de 0 à 6
+      # le lancer est d'abord publié, sans être joué
+      assert game.dice == 6
+      assert Game.tokens_of(game, :red) == [0, finish(), finish(), finish()]
+      assert Game.auto_resolve?(game)
+
+      {:ok, game, _events} = Game.resolve_roll(game)
       assert Game.tokens_of(game, :red) == [6, finish(), finish(), finish()]
     end
 
@@ -307,8 +331,13 @@ defmodule Ludo.GameTest do
       assert game.turn == 0
       {:ok, game, _} = Game.move(game, "a", 0)
 
-      # 3e 6 : le tour est perdu
+      # 3e 6 : le tour est perdu, après un court affichage du numéro
       {:ok, game, _} = Game.roll(game, "a", 6)
+      assert game.dice == 6
+      assert game.turn == 0
+      assert Game.auto_resolve?(game)
+
+      {:ok, game, _} = Game.resolve_roll(game)
       assert game.turn == 1
       assert game.six_streak == 0
       assert Enum.any?(game.log, &(&1.type == :triple_six))
@@ -406,7 +435,13 @@ defmodule Ludo.GameTest do
 
       assert game.status == :playing
 
+      # un seul pion jouable : le serveur enchaîne le coup après avoir publié
+      # le numéro tiré
       {:ok, game, _events} = Game.roll(game, "a", 1)
+      assert game.dice == 1
+      assert game.status == :playing
+
+      {:ok, game, _events} = Game.resolve_roll(game)
       assert game.status == :finished
       assert game.winner == :red
       assert Game.finished_count(game, :red) == 4
@@ -419,6 +454,8 @@ defmodule Ludo.GameTest do
         |> set_tokens(:red, [finish(), finish(), finish(), finish() - 1])
 
       {:ok, game, _} = Game.roll(game, "a", 1)
+      {:ok, game, _} = Game.resolve_roll(game)
+      assert game.status == :finished
 
       assert {:error, :not_playing} = Game.roll(game, "b", 3)
       assert {:error, :not_playing} = Game.move(game, "b", 0)
@@ -508,8 +545,8 @@ defmodule Ludo.GameTest do
             case Game.roll(acc, player.id, dice) do
               {:ok, game, _events} ->
                 case Game.legal_moves(game) do
-                  [] -> {:cont, game}
-                  moves -> {:cont, elem(Game.move(game, player.id, hd(moves)), 1)}
+                  [] -> {:cont, resolve(game)}
+                  moves -> {:cont, resolve(elem(Game.move(game, player.id, hd(moves)), 1))}
                 end
 
               {:error, reason} ->
@@ -535,10 +572,13 @@ defmodule Ludo.GameTest do
           else
             case Game.roll(acc, player.id, :rand.uniform(6)) do
               {:ok, g, _} ->
-                case Game.legal_moves(g) do
-                  [] -> g
-                  moves -> elem(Game.move(g, player.id, Enum.random(moves)), 1)
-                end
+                g =
+                  case Game.legal_moves(g) do
+                    [] -> g
+                    moves -> elem(Game.move(g, player.id, Enum.random(moves)), 1)
+                  end
+
+                resolve(g)
 
               {:error, _} ->
                 acc

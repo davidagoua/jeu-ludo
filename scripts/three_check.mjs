@@ -737,6 +737,70 @@ check(
   board.diceValues()
 );
 
+/* ------------------------------------------------- le dessus du dé */
+
+section("Le dessus du dé montre bien le nombre");
+
+// Vu de dessus, le dé doit montrer exactement le nombre de points attendu sur
+// sa face supérieure. C'est la vérification qui manquait pour dire « on ne voit
+// pas les chiffres ».
+let facesOk = true;
+
+for (const valeur of [1, 2, 3, 4, 5, 6]) {
+  board.update(etatDe({ dice: valeur, turn_color: geo.players[0] }), geo.players[0]);
+  board.stepFrames(300); // le dé finit de tourner
+
+  const dessus = board.diceTopPips("red");
+  const correct = dessus.length === valeur && dessus.every((face) => face === valeur);
+
+  if (!correct) {
+    facesOk = false;
+    console.log("    valeur " + valeur + " -> " + JSON.stringify(dessus));
+  }
+}
+check("chaque valeur affiche ses points sur la face du dessus", facesOk);
+
+// lisibilité : la taille du dé et de ses points par rapport au cadre
+const demi = board.viewLimits().half;
+const tailleDe = 1.9;
+const taillePoint = 0.078 * (tailleDe / 0.78) * 2;
+
+check(
+  "le dé occupe une part lisible du cadre",
+  tailleDe / (2 * demi) > 0.08,
+  Number(((tailleDe / (2 * demi)) * 100).toFixed(1)) + " %"
+);
+check(
+  "un point du dé reste visible",
+  taillePoint / (2 * demi) > 0.015,
+  Number(((taillePoint / (2 * demi)) * 100).toFixed(1)) + " %"
+);
+
+/* ------------------------------------------------------ surbrillance du dé */
+
+section("Le dé du joueur en cours est en surbrillance");
+
+board.update(etatDe({ dice: null, turn_color: geo.players[2] }), geo.players[2]);
+check(
+  "seul le dé du joueur en cours porte un halo",
+  JSON.stringify(
+    geo.players.map((color) => board.diceHighlighted(color))
+  ) === JSON.stringify([false, false, true, false]),
+  geo.players.map((color) => board.diceHighlighted(color))
+);
+
+board.update(etatDe({ dice: 4, turn_color: geo.players[0] }), geo.players[0]);
+check(
+  "le halo suit le changement de joueur",
+  board.diceHighlighted("red") === true && board.diceHighlighted("yellow") === false
+);
+
+board.update(etatDe({ status: "finished", turn_color: geo.players[0] }), geo.players[0]);
+check(
+  "en fin de partie, plus aucun halo",
+  geo.players.every((color) => board.diceHighlighted(color) === false)
+);
+
 /* ------------------------------------------------------- clic sur son dé */
 
 section("Seul son propre dé réagit au clic");

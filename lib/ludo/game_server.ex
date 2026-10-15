@@ -27,8 +27,13 @@ defmodule Ludo.GameServer do
   # L'IA ne joue pas instantanément : une pause aléatoire laisse le temps de voir
   # le dé et le déplacement, et évite qu'elle enchaîne ses coups comme une
   # machine. Le tirage est refait à chaque action (voir `bot_delay/0`).
-  @bot_delay_min 1_000
-  @bot_delay_max 3_000
+  @bot_delay_min 500
+  @bot_delay_max 1_000
+
+  # Temps pendant lequel le numéro tiré reste affiché avant que le serveur ne
+  # résolve le lancer à la place du joueur (aucun coup possible, ou un seul).
+  # Sans cette pause, le numéro disparaîtrait avant d'avoir pu être lu.
+  @roll_display 500
 
   @turn_timeout 60_000
 
@@ -138,7 +143,7 @@ defmodule Ludo.GameServer do
         Keyword.fetch!(opts, :host_id)
       )
 
-    state = %{game: game, bot_timer: nil, timeout_timer: nil}
+    state = %{game: game, bot_timer: nil, timeout_timer: nil, roll_timer: nil}
     {:ok, after_change(state)}
   end
 
@@ -209,12 +214,20 @@ defmodule Ludo.GameServer do
     {:noreply, state |> bot_act() |> commit()}
   end
 
+  def handle_info({:resolve_roll, version}, %{game: %{version: version}} = state) do
+    case Game.resolve_roll(state.game) do
+      {:ok, game, _events} -> {:noreply, commit(%{state | game: game})}
+      {:error, _reason} -> {:noreply, state}
+    end
+  end
+
   def handle_info({:turn_timeout, version}, %{game: %{version: version}} = state) do
     {:noreply, state |> auto_play() |> commit()}
   end
 
   # Minuteur obsolète : un autre coup est arrivé entre-temps.
-  def handle_info({kind, _stale}, state) when kind in [:bot_tick, :turn_timeout] do
+  def handle_info({kind, _stale}, state)
+      when kind in [:bot_tick, :turn_timeout, :resolve_roll] do
     {:noreply, state}
   end
 
@@ -323,6 +336,7 @@ defmodule Ludo.GameServer do
 
     cond do
       game.status != :playing -> state
+      Game.auto_resolve?(game) -> schedule(state, :resolve_roll, @roll_display)
       Game.bot_turn?(game) -> schedule(state, :bot_tick, bot_delay())
       true -> schedule(state, :turn_timeout, @turn_timeout)
     end
@@ -333,6 +347,7 @@ defmodule Ludo.GameServer do
 
     case kind do
       :bot_tick -> %{state | bot_timer: ref}
+      :resolve_roll -> %{state | roll_timer: ref}
       :turn_timeout -> %{state | timeout_timer: ref}
     end
   end
@@ -340,7 +355,8 @@ defmodule Ludo.GameServer do
   defp cancel_timers(state) do
     if state.bot_timer, do: Process.cancel_timer(state.bot_timer)
     if state.timeout_timer, do: Process.cancel_timer(state.timeout_timer)
-    %{state | bot_timer: nil, timeout_timer: nil}
+    if state.roll_timer, do: Process.cancel_timer(state.roll_timer)
+    %{state | bot_timer: nil, timeout_timer: nil, roll_timer: nil}
   end
 
   # Publie le nouvel état et met à jour le lobby.

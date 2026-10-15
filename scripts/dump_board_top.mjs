@@ -118,7 +118,8 @@ const dice = items
     x: i.x,
     z: i.z,
     value: valeurs[i.color] === undefined ? null : valeurs[i.color],
-    pips: Boolean(pipsVisibles[i.color])
+    pips: Boolean(pipsVisibles[i.color]),
+    highlighted: board.diceHighlighted(i.color)
   }));
 
 writeFileSync(

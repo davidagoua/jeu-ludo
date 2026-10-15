@@ -280,6 +280,75 @@ defmodule Ludo.Game do
 
   def start(%__MODULE__{}), do: {:error, :already_started}
 
+  @doc """
+  Le lancer en cours doit-il être résolu par le serveur, sans attendre le joueur ?
+
+  Oui dans trois cas : aucun coup possible, un seul coup jouable (l'enchaîner
+  évite un clic inutile), ou trois 6 d'affilée qui font perdre le tour.
+
+  Le serveur attend alors un court instant avant d'appeler `resolve_roll/1`, pour
+  que le numéro tiré reste affiché — sinon il disparaîtrait aussitôt.
+  """
+  @spec auto_resolve?(t()) :: boolean()
+  def auto_resolve?(%__MODULE__{status: :playing} = game) do
+    game.dice != nil and (game.six_streak >= 3 or length(legal_moves(game)) <= 1)
+  end
+
+  def auto_resolve?(%__MODULE__{}), do: false
+
+  @doc """
+  Résout un lancer que le joueur ne peut pas jouer lui-même : perd son tour avec
+  trois 6, passe la main faute de coup, ou enchaîne l'unique coup jouable.
+  """
+  @spec resolve_roll(t()) :: {:ok, t(), list()} | {:error, atom()}
+  def resolve_roll(%__MODULE__{status: :playing, dice: dice} = game) when is_integer(dice) do
+    player = current_player(game)
+
+    cond do
+      player == nil ->
+        {:error, :no_current_player}
+
+      game.six_streak >= 3 ->
+        game =
+          game
+          |> log_event(
+            event(game, %{
+              type: :triple_six,
+              color: player.color,
+              text: "Trois 6 d'affilée : le tour est perdu."
+            })
+          )
+          |> end_turn(false)
+
+        {:ok, game, []}
+
+      true ->
+        case legal_moves(game) do
+          [] ->
+            game =
+              game
+              |> log_event(
+                event(game, %{
+                  type: :stuck,
+                  color: player.color,
+                  text: "Aucun coup possible, le tour passe."
+                })
+              )
+              |> end_turn(false)
+
+            {:ok, game, []}
+
+          [only] ->
+            move(game, player.id, only)
+
+          _moves ->
+            {:error, :ambiguous}
+        end
+    end
+  end
+
+  def resolve_roll(%__MODULE__{}), do: {:error, :no_dice}
+
   @doc "Marque un joueur comme déconnecté (la partie continue)."
   def disconnect(game, player_id) do
     case Enum.find_index(game.players, &(&1.id == player_id)) do
@@ -406,50 +475,12 @@ defmodule Ludo.Game do
             text: "#{player.name} lance un #{value}."
           })
 
-        cond do
-          value == 6 and streak == 3 ->
-            game =
-              game
-              |> log_event(rolled)
-              |> log_event(
-                event(game, %{
-                  type: :triple_six,
-                  color: player.color,
-                  text: "Trois 6 d'affilée : le tour est perdu."
-                })
-              )
-              |> end_turn(false)
+        game = log_event(game, rolled)
 
-            {:ok, game, [rolled]}
-
-          true ->
-            case legal_moves(game) do
-              [] ->
-                game =
-                  game
-                  |> log_event(rolled)
-                  |> log_event(
-                    event(game, %{
-                      type: :stuck,
-                      color: player.color,
-                      text: "Aucun coup possible, le tour passe."
-                    })
-                  )
-                  |> end_turn(false)
-
-                {:ok, game, [rolled]}
-
-              [only] ->
-                # Un seul coup jouable : on l'enchaîne pour éviter un clic inutile.
-                game = log_event(game, rolled)
-                move(game, player_id, only)
-
-              moves ->
-                game = log_event(game, rolled)
-                # `rolled` ne contient pas encore la clé : Map.put, pas la syntaxe `|`.
-                {:ok, game, [Map.put(rolled, :legal, moves)]}
-            end
-        end
+        # Le lancer est publié tel quel : c'est au serveur de le résoudre, après
+        # un court délai, pour que le numéro tiré soit visible même quand le
+        # joueur n'a aucun coup à jouer.
+        {:ok, game, [Map.put(rolled, :legal, legal_moves(game))]}
     end
   end
 

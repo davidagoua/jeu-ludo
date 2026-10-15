@@ -35,9 +35,9 @@ const SPREAD = 0.17; // écartement de plusieurs pions sur une même case
 // taille d'origine : il est dimensionné par rapport au plateau.
 // Un dé par joueur, posé en diagonale à l'extérieur de son camp. Le dé d'un
 // joueur qui n'a pas la main — ou qui a fini de jouer — reste blanc, sans point.
-const DICE_SIZE = 1.4;
+const DICE_SIZE = 1.9;
 const DICE_Y = DICE_SIZE / 2 + 0.03;
-const DICE_OFFSET = BOARD / 2 + 0.5 + DICE_SIZE / 2;
+const DICE_OFFSET = BOARD / 2 + 0.35 + DICE_SIZE / 2;
 
 // Étendue à couvrir : le plateau et les quatre dés.
 const VIEW_TOP = -(DICE_OFFSET + DICE_SIZE / 2 + 0.45);
@@ -422,9 +422,9 @@ function buildDiceFor(color) {
 
   const pips = [];
 
-  for (const [, spots, normal, face] of layout) {
+  for (const [value, spots, normal, face] of layout) {
     for (const [u, v] of spots) {
-      const pip = new THREE.Mesh(new THREE.SphereGeometry(0.062 * k, 12, 10), pipMat);
+      const pip = new THREE.Mesh(new THREE.SphereGeometry(0.078 * k, 12, 10), pipMat);
       const pu = u * k;
       const pv = v * k;
 
@@ -432,12 +432,30 @@ function buildDiceFor(color) {
       else if (face[1] !== 0) pip.position.set(pu, normal[1], pv);
       else pip.position.set(pu, pv, normal[2]);
 
-      pip.userData = { kind: "pip", color };
+      // la face est étiquetée : le test vérifie ainsi que le dessus du dé
+      // montre bien le nombre de points attendu
+      pip.userData = { kind: "pip", color, face: value };
       pip.visible = false; // blanc tant que le joueur n'a rien lancé
       pips.push(pip);
       pivot.add(pip);
     }
   }
+
+  // halo coloré : le dé du joueur en cours se repère d'un coup d'œil
+  const halo = new THREE.Mesh(
+    new THREE.RingGeometry(size * 0.62, size * 0.8, 40),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color(geo.colors[color]),
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide
+    })
+  );
+  halo.rotation.x = -Math.PI / 2;
+  halo.position.y = 0.02;
+  halo.visible = false;
+  halo.userData = { kind: "dice-halo", color };
+  group.add(halo);
 
   // chaque camp est dans un coin : le dé se pose en diagonale, à l'extérieur
   const [bx, by] = geo.base_areas[color];
@@ -452,6 +470,7 @@ function buildDiceFor(color) {
     group,
     pivot,
     pips,
+    halo,
     target: new THREE.Quaternion(),
     value: null,
     rolling: false
@@ -696,6 +715,11 @@ export function update(state, myColor) {
   }
 
   activeDice.color = state.status === "playing" ? state.turn_color : null;
+
+  // halo uniquement sous le dé du joueur en cours
+  for (const [color, node] of diceByColor) {
+    node.halo.visible = color === activeDice.color;
+  }
 }
 
 /**
@@ -715,9 +739,16 @@ function updateSimulation(dt) {
       node.pivot.quaternion.slerp(node.target, Math.min(1, dt * 9));
     }
 
-    // le dé du joueur en cours respire légèrement, les autres restent posés
+    // le dé du joueur en cours respire, et son halo pulse
     const actif = node.color === activeDice.color;
-    node.group.position.y = DICE_Y + (actif ? Math.sin(performance.now() / 700) * 0.06 + 0.05 : 0);
+    const temps = performance.now();
+
+    node.group.position.y = DICE_Y + (actif ? Math.sin(temps / 700) * 0.06 + 0.05 : 0);
+
+    if (node.halo.visible) {
+      const battement = 1 + 0.08 * Math.sin(temps / 320);
+      node.halo.scale.setScalar(battement);
+    }
   }
 
   // pulsation de la base du joueur dont c'est le tour
@@ -946,6 +977,40 @@ export function project(point) {
 export function diceValue() {
   const node = diceByColor.get(activeDice.color);
   return node ? node.value : null;
+}
+
+/**
+ * Points situés sur le dessus du dé, pour une couleur donnée.
+ *
+ * Sert à vérifier que le dé montre bien le nombre attendu quand on le regarde
+ * d'au-dessus — c'est tout l'intérêt d'un dé vu de dessus.
+ */
+export function diceTopPips(color) {
+  const node = diceByColor.get(color);
+  if (!node) return [];
+
+  root.updateMatrixWorld(true);
+  const point = new THREE.Vector3();
+
+  const places = node.pips
+    .filter((pip) => pip.visible)
+    .map((pip) => ({ pip, y: pip.getWorldPosition(point).y }));
+
+  if (places.length === 0) return [];
+
+  const sommet = Math.max(...places.map((entry) => entry.y));
+
+  // seuls les points posés sur la face du dessus : ils sont tous à la même
+  // hauteur, au sommet du cube
+  return places
+    .filter((entry) => entry.y > sommet - 0.05)
+    .map((entry) => entry.pip.userData.face);
+}
+
+/** Vrai si le halo du dé de cette couleur est visible. */
+export function diceHighlighted(color) {
+  const node = diceByColor.get(color);
+  return Boolean(node && node.halo.visible);
 }
 
 /** Valeur affichée par chaque dé, couleur par couleur (vérifications). */

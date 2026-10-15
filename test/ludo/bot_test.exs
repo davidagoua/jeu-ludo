@@ -133,6 +133,15 @@ defmodule Ludo.BotTest do
 
             case Game.roll(acc, player.id, :rand.uniform(6)) do
               {:ok, g, _events} ->
+                # Le serveur résout lui-même les lancers sans choix possible.
+                g =
+                  if Game.auto_resolve?(g) do
+                    {:ok, resumed, _} = Game.resolve_roll(g)
+                    resumed
+                  else
+                    g
+                  end
+
                 case Bot.choose_move(g) do
                   nil ->
                     {:cont, g}

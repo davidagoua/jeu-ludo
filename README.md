@@ -52,10 +52,16 @@ orthographique, donc le plateau reste un carré parfait à l'écran, quel que so
 son contenu.
 
 **Chaque joueur a son dé, posé à l'extérieur de son camp** (en diagonale, dans le
-coin). Un dé dont le joueur n'a pas la main — ou qui vient de jouer son pion —
-reste **blanc**, sans aucun point : seul le dé du joueur en cours montre sa
-valeur, le temps qu'il joue son coup. Cliquer sur le dé d'un autre joueur ne fait
-rien.
+coin), et le dé du joueur en cours porte un **halo à sa couleur**. Un dé dont le
+joueur n'a pas la main — ou qui vient de jouer son pion — reste **blanc**, sans
+aucun point : seul le dé du joueur en cours montre sa valeur, le temps qu'il joue
+son coup. Cliquer sur le dé d'un autre joueur ne fait rien.
+
+Quand le joueur ne peut pas jouer — aucun coup possible, ou un seul que le
+serveur enchaîne — le numéro reste affiché **500 ms** avant que la main ne passe.
+Sans cette pause il disparaîtrait aussitôt, sans que personne ait pu le lire :
+c'est le serveur qui publie le lancer, puis le résout (`Ludo.Game.auto_resolve?/1`
+et `resolve_roll/1`).
 
 Le dé du panneau latéral suit la même règle et porte un liseré à la couleur du
 joueur dont c'est le tour.
@@ -137,7 +143,7 @@ Quelques partis pris qui expliquent la structure :
 * **Un processus par partie.** Toutes les actions passent par des `call`
   adressés au `GameServer`, ce qui supprime toute condition de course entre
   joueurs d'un même salon.
-* **L'IA marque une pause.** Elle tire un délai aléatoire de 1 à 3 secondes
+* **L'IA marque une pause.** Elle tire un délai aléatoire de 0,5 à 1 seconde
   avant chaque action (`GameServer.bot_delay/0`) : sans cela elle enchaîne le
   dé et le déplacement trop vite pour qu'on puisse lire le numéro qu'elle vient
   de faire.
@@ -181,7 +187,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
 node scripts/geometry_check.mjs /tmp/geometry.json   # 37 vérifications : panneau, dé, bannière
-node scripts/three_check.mjs /tmp/geometry.json      # 58 vérifications : scène, cadrage, dé
+node scripts/three_check.mjs /tmp/geometry.json      # 79 vérifications : scène, cadrage, dés, clic
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)
 node scripts/dump_board_top.mjs /tmp/geometry.json /tmp/board_top.json

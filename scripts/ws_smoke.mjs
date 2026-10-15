@@ -270,20 +270,26 @@ async function main() {
   clients[aliceJoin.seat.color] = alice;
   clients[bobJoin.seat.color] = bob;
   let turns = 0;
+  let attentes = 0;
 
   while (state.status === "playing" && turns < 400) {
-    turns++;
     const color = state.turn_color;
     const client = clients[color];
     if (!client) throw new Error("aucun client pour la couleur " + color);
 
     if (state.dice === null) {
+      turns++;
       const reply = await client.push("roll", {});
       state = reply.state;
     } else if (state.legal_moves.length > 0) {
+      turns++;
       const reply = await client.push("move", { token: state.legal_moves[0] });
       state = reply.state;
     } else {
+      // Le serveur résout lui-même un lancer sans coup possible, après un court
+      // délai pour laisser le numéro affiché : on l'attend sans consommer de
+      // tour, sinon la boucle s'épuiserait en attentes.
+      if (++attentes > 6000) throw new Error("le serveur ne résout plus les lancers");
       await delay(20);
       state = await refresh(client, state);
     }
