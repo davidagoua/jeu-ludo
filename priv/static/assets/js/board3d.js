@@ -20,9 +20,26 @@ const CENTER_CELL = (BOARD - 1) / 2; // 7
 const TILE_H = 0.18;
 const TOP = TILE_H; // surface supérieure des cases
 const TOKEN_R = 0.34;
+const FOV = 42; // champ de vision vertical
+// Une vue trop rasante rapproche le bord proche du plateau et oblige à
+// reculer énormément la caméra, ce qui rétrécit le plateau : on garde une
+// plongée d'au moins 29°.
+const MIN_ELEVATION = 0.5;
+const MAX_ELEVATION = 1.45; // plongée maximale (vue du dessus)
+// Fraction du cadre qu'on s'autorise à occuper.
+const FRAME_LIMIT = 0.94;
+const ZOOM_MAX = 1.6; // marge d'éloignement offerte à la molette
+// La distance de caméra est cherchée par dichotomie (voir `fittedRadius`) : une
+// formule « largeur / (2 tan(fov/2)) » ignore que les coins proches sont plus
+// près de la caméra, et surtout que le plateau vu de biais se présente par sa
+// diagonale — elle laissait le plateau rogné.
+
 const STEP_MS = 130; // durée d'un déplacement d'une case
 const JUMP_MS = 420; // durée d'un saut (sortie de base, capture)
 const HOP = 0.34; // hauteur d'un petit bond
+const DICE_X = 0;
+const DICE_Y = 1.3;
+const DICE_Z = BOARD / 2 + 1.4; // juste au-delà du bord du plateau
 
 /* ------------------------------------------------------- fonctions pures */
 
@@ -164,7 +181,81 @@ let activeBase = { color: null, t: 0 };
 let lastFrame = 0;
 let raycaster = null;
 let pointer = new THREE.Vector2();
-let orbit = { azimuth: 0, elevation: 0.95, radius: 17.5, targetRadius: 17.5 };
+let orbit = { azimuth: 0, elevation: 0.95, zoom: 1 };
+
+// Points qui doivent rester dans le cadre : le plateau (un peu au-dessus des
+// pions) et le dé.
+function framePoints() {
+  return [
+    [-BOARD / 2, 0.7, -BOARD / 2],
+    [BOARD / 2, 0.7, -BOARD / 2],
+    [-BOARD / 2, 0.7, BOARD / 2],
+    [BOARD / 2, 0.7, BOARD / 2],
+    [DICE_X, DICE_Y + 0.55, DICE_Z],
+    [DICE_X, DICE_Y + 0.55, DICE_Z - 0.9]
+  ];
+}
+
+function placeCamera(radius, elevation, azimuth) {
+  camera.position.set(
+    radius * Math.sin(azimuth) * Math.cos(elevation),
+    radius * Math.sin(elevation),
+    radius * Math.cos(azimuth) * Math.cos(elevation)
+  );
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+}
+
+function fitsAt(radius, elevation, azimuth) {
+  placeCamera(radius, elevation, azimuth);
+
+  return framePoints().every(([x, y, z]) => {
+    const v = new THREE.Vector3(x, y, z).project(camera);
+    return Math.abs(v.x) <= FRAME_LIMIT && Math.abs(v.y) <= FRAME_LIMIT;
+  });
+}
+
+/**
+ * Distance de caméra qui cadre tout le plateau pour un angle donné.
+ *
+ * Recalculée quand l'angle change : vu de biais — et surtout à 45°, où le
+ * plateau se présente par sa diagonale (10,6 unités au lieu de 7,5) — il faut
+ * reculer bien plus loin que de face. Une distance fixe obligeait donc à choisir
+ * entre rogner le plateau ou le rétrécir inutilement.
+ */
+function fittedRadius(elevation, azimuth) {
+  let lo = 4;
+  let hi = 200;
+
+  for (let i = 0; i < 26; i++) {
+    const mid = (lo + hi) / 2;
+    if (fitsAt(mid, elevation, azimuth)) hi = mid;
+    else lo = mid;
+  }
+
+  return hi;
+}
+
+let fitCache = { elevation: null, azimuth: null, radius: 0 };
+
+function currentFit() {
+  if (
+    fitCache.elevation !== null &&
+    Math.abs(fitCache.elevation - orbit.elevation) < 1e-4 &&
+    Math.abs(fitCache.azimuth - orbit.azimuth) < 1e-4
+  ) {
+    return fitCache.radius;
+  }
+
+  const radius = fittedRadius(orbit.elevation, orbit.azimuth);
+  fitCache = { elevation: orbit.elevation, azimuth: orbit.azimuth, radius };
+  return radius;
+}
+
+function updateCamera() {
+  placeCamera(currentFit() * orbit.zoom, orbit.elevation, orbit.azimuth);
+}
+
 let dragging = false;
 let lastPointer = { x: 0, y: 0 };
 let handlers = { roll: null, token: null };
@@ -361,7 +452,8 @@ function buildDice(color = "#f7fafc") {
     }
   }
 
-  diceGroup.position.set(0, 1.5, 6.4);
+  // devant le plateau : à 6,4 il reposait sur la colonne verte
+  diceGroup.position.set(DICE_X, DICE_Y, DICE_Z);
   root.add(diceGroup);
 }
 
@@ -536,7 +628,9 @@ export function update(state, myColor) {
   // zone du joueur dont c'est le tour
   activeBase.color = state.status === "playing" ? state.turn_color : null;
 
-  // dé
+  // Dé : la face affichée ne change QUE sur un nouveau lancer. Le serveur remet
+  // `dice` à zéro dès que le pion a bougé, mais les autres joueurs doivent
+  // pouvoir lire le numéro joué : on conserve donc la dernière valeur.
   if (state.dice !== null && !dice.rolling) {
     dice.value = state.dice;
     const [rx, ry, rz] = DICE_ORIENTATIONS[state.dice] || [0, 0, 0];
@@ -558,7 +652,7 @@ function render(dt) {
     } else {
       dicePivot.quaternion.slerp(dice.target, Math.min(1, dt * 9));
     }
-    diceGroup.position.y = 1.5 + Math.sin(performance.now() / 700) * 0.06;
+    diceGroup.position.y = DICE_Y + Math.sin(performance.now() / 700) * 0.06;
   }
 
   // pulsation de la base du joueur dont c'est le tour
@@ -584,15 +678,7 @@ function render(dt) {
     }
   }
 
-  // caméra orbitale
-  const r = orbit.radius;
-  camera.position.set(
-    r * Math.sin(orbit.azimuth) * Math.cos(orbit.elevation),
-    r * Math.sin(orbit.elevation),
-    r * Math.cos(orbit.azimuth) * Math.cos(orbit.elevation)
-  );
-  camera.lookAt(0, 0, 0);
-
+  updateCamera();
   renderer.render(scene, camera);
 }
 
@@ -648,8 +734,8 @@ function bindInput(canvas) {
     if (!dragging) return;
     orbit.azimuth -= (event.clientX - lastPointer.x) * 0.006;
     orbit.elevation = Math.max(
-      0.25,
-      Math.min(1.45, orbit.elevation + (event.clientY - lastPointer.y) * 0.005)
+      MIN_ELEVATION,
+      Math.min(MAX_ELEVATION, orbit.elevation + (event.clientY - lastPointer.y) * 0.005)
     );
     lastPointer = { x: event.clientX, y: event.clientY };
   });
@@ -662,7 +748,8 @@ function bindInput(canvas) {
     "wheel",
     (event) => {
       event.preventDefault();
-      orbit.radius = Math.max(11, Math.min(26, orbit.radius + event.deltaY * 0.01));
+      // 1 = cadrage au plus près : on ne peut que s'éloigner, jamais rogner
+      orbit.zoom = Math.max(1, Math.min(ZOOM_MAX, orbit.zoom + event.deltaY * 0.0015));
     },
     { passive: false }
   );
@@ -754,6 +841,38 @@ export function tokenPositions() {
     out[key] = { x: node.position.x, y: node.position.y, z: node.position.z };
   }
   return out;
+}
+
+/**
+ * Projette un point du monde dans le repère de la caméra (-1 à 1).
+ * Sert à vérifier que le plateau est entièrement cadré.
+ */
+export function project(point) {
+  updateCamera();
+  const v = new THREE.Vector3(point.x, point.y || 0, point.z).project(camera);
+  return { x: v.x, y: v.y };
+}
+
+/** Face actuellement affichée par le dé (`null` avant le premier lancer). */
+export function diceValue() {
+  return dice.value;
+}
+
+/** Déplace la caméra (sert aux vérifications et à un futur bouton de recadrage). */
+export function setOrbit(next) {
+  Object.assign(orbit, next);
+  fitCache = { elevation: null, azimuth: null, radius: 0 };
+}
+
+/** Rayon de caméra minimal qui ne rogne pas le plateau. */
+/** Rayon de caméra réellement utilisé. */
+export function currentRadius() {
+  return currentFit() * orbit.zoom;
+}
+
+/** Bornes offertes au joueur (pour les vérifications). */
+export function viewLimits() {
+  return { minElevation: MIN_ELEVATION, maxElevation: MAX_ELEVATION, maxZoom: ZOOM_MAX };
 }
 
 /** Anneaux de surbrillance actuellement visibles, pour les vérifications. */

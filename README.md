@@ -46,11 +46,17 @@ Testé avec Elixir 1.19.3 / OTP 28 et Phoenix 1.8.
 4. **Cliquez sur le dé** pour lancer, puis sur un pion en surbrillance.
 
 Le plateau est en **3D** : on peut le faire tourner à la souris (glisser) et
-zoomer (molette). Le dé est un vrai cube qui roule avant de s'arrêter sur la
-valeur tirée, les pions bondissent de case en case au lieu de se téléporter, et
-la zone du joueur dont c'est le tour s'illumine sur le plateau.
+zoomer (molette). La caméra recule d'elle-même quand on tourne, pour que le
+plateau reste entier dans le cadre. Les pions bondissent de case en case au lieu
+de se téléporter, et la zone du joueur dont c'est le tour s'illumine.
 
-Le dé du panneau latéral fait la même chose : il reste présent comme repère et
+Le dé est un vrai cube qui roule avant de s'arrêter sur la valeur tirée, et il
+**garde ce numéro affiché jusqu'au lancer suivant** : le serveur remet le dé à
+zéro dès que le pion a bougé, mais les autres joueurs doivent pouvoir lire ce qui
+a été joué. Un liseré de la couleur du joueur indique à qui appartient le numéro
+affiché.
+
+Le dé du panneau latéral suit le même état : il reste présent comme repère et
 comme commande accessible au clavier et aux lecteurs d'écran.
 
 Un joueur qui recharge la page **reprend automatiquement son siège** : son
@@ -162,8 +168,8 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
-node scripts/geometry_check.mjs /tmp/geometry.json   # 26 vérifications : panneau, dé, bannière
-node scripts/three_check.mjs /tmp/geometry.json      # 46 vérifications : logique et scène 3D
+node scripts/geometry_check.mjs /tmp/geometry.json   # 37 vérifications : panneau, dé, bannière
+node scripts/three_check.mjs /tmp/geometry.json      # 56 vérifications : scène 3D et cadrage
 ```
 
 `mix test` couvre notamment la géométrie (boucle fermée, symétrie des départs,

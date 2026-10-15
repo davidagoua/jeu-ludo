@@ -72,6 +72,10 @@
   let mySeat = null;
   let lastState = null;
   let lastDice = null;
+  // Dernier lancer réellement affiché, et par qui : le serveur remet `dice` à
+  // zéro dès que le pion a bougé, or les autres joueurs doivent pouvoir lire le
+  // numéro joué. On garde donc la valeur jusqu'au lancer suivant.
+  let lastRoll = { value: null, color: null };
   let spinTimer = null;
   // Le plateau est rendu en 3D ; le module s'annonce par l'événement
   // `ludo3dready` (l'ordre de chargement des scripts n'est pas garanti).
@@ -377,8 +381,7 @@
       dice.disabled = true;
       dice.classList.remove("ready");
       hint.textContent = "La partie démarre dès que tous les sièges sont pris.";
-      fillBots.hidden = mySeat !== 0;
-      settleDice(null);
+      showDice(null);
       return;
     }
 
@@ -390,7 +393,14 @@
       dice.disabled = true;
       dice.classList.remove("ready");
       hint.textContent = winner ? winner.name + " remporte la partie." : "";
-      settleDice(null);
+      const dernier = lastRoll.color
+        ? state.players.find((p) => p.color === lastRoll.color)
+        : null;
+      showDice(
+        state.dice !== null ? state.dice : lastRoll.value,
+        lastRoll.color,
+        dernier && dernier.name
+      );
       return;
     }
 
@@ -399,13 +409,20 @@
       (mine ? "À vous de jouer" : "Au tour de " + state.turn_name) +
       (state.turn_is_bot ? " (IA)" : "");
 
+    // Un nouveau lancer remplace le précédent ; sinon on garde la face affichée,
+    // même après que le pion a bougé et que le serveur a remis `dice` à zéro.
+    if (state.dice !== null) {
+      lastRoll = { value: state.dice, color: state.turn_color };
+    }
+
     // Pendant que le joueur lance son propre dé, c'est l'animation qui pilote la
     // face affichée : on ne l'écrase pas avec l'état du serveur.
     if (!spinTimer) {
-      settleDice(state.dice);
+      const roller = lastRoll.color
+        ? state.players.find((p) => p.color === lastRoll.color)
+        : null;
+      showDice(lastRoll.value, lastRoll.color, roller && roller.name);
     }
-
-    lastDice = state.dice;
 
     // Le dé est le bouton : actif seulement quand c'est à nous et qu'il n'a pas
     // encore été lancé.
@@ -421,6 +438,46 @@
       hint.textContent = "Cliquez sur un pion en surbrillance.";
     } else {
       hint.textContent = "Aucun coup possible avec ce dé.";
+    }
+  }
+
+  /**
+   * Affiche une face du dé du panneau, en indiquant à qui elle appartient.
+   *
+   * La couleur du liseré dit qui a joué ce numéro : sans elle, on ne saurait pas
+   * si le dé montre mon lancer ou celui de l'adversaire.
+   */
+  function showDice(value, color, ownerName) {
+    if (spinTimer) return;
+
+    const dice = $("#dice");
+    if (!dice) return;
+
+    // face précédente : on évite de rejouer l'animation d'arrivée sans raison
+    const changed = value !== lastDice;
+    lastDice = value;
+
+    renderDiceFace(value);
+
+    if (color && geometry && geometry.colors[color]) {
+      dice.style.setProperty("--roller", geometry.colors[color]);
+      dice.classList.add("owned");
+    } else {
+      dice.classList.remove("owned");
+    }
+
+    // les lecteurs d'écran doivent aussi savoir à qui appartient ce numéro
+    dice.setAttribute(
+      "aria-label",
+      value === null
+        ? "dé non lancé"
+        : "dé : " + value + (ownerName ? ", lancé par " + ownerName : "")
+    );
+
+    if (value !== null && changed) {
+      dice.classList.remove("settled");
+      void dice.offsetWidth;
+      dice.classList.add("settled");
     }
   }
 
@@ -456,22 +513,6 @@
     dice.setAttribute("aria-label", value ? "dé : " + value : "dé non lancé");
   }
 
-  // Affiche une face et joue la petite animation d'arrivée.
-  function settleDice(value) {
-    if (spinTimer) return;
-
-    const dice = $("#dice");
-    if (!dice) return;
-
-    renderDiceFace(value);
-
-    if (value !== null && value !== lastDice) {
-      dice.classList.remove("settled");
-      void dice.offsetWidth;
-      dice.classList.add("settled");
-    }
-  }
-
   // Lancer le dé : appelé par le bouton du panneau comme par le dé en 3D.
   function rollDice() {
     const dice = $("#dice");
@@ -485,6 +526,9 @@
     push(game, "roll", {}, (reply) => {
       lastState = reply.state;
       stopSpin(reply.state.dice);
+      if (reply.state.dice !== null) {
+        lastRoll = { value: reply.state.dice, color: reply.state.turn_color };
+      }
       renderState(reply.state);
     });
   }
@@ -513,13 +557,9 @@
 
     dice.classList.remove("rolling");
     if (three() && three().isReady()) three().setRolling(false);
-    renderDiceFace(value);
 
-    if (value !== null) {
-      dice.classList.remove("settled");
-      void dice.offsetWidth;
-      dice.classList.add("settled");
-    }
+    if (value !== null) lastRoll = { value: value, color: myColor };
+    showDice(value, value === null ? null : myColor, null);
   }
 
   function renderBanner(state) {

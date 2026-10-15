@@ -488,6 +488,123 @@ check(
   faceEnHaut.toArray().map((v) => Number(v.toFixed(3)))
 );
 
+/* ------------------------------------------------------------- cadrage */
+
+section("Cadrage de la caméra");
+
+// Le plateau est un carré de 15 unités : mal cadré, il est rogné et on ne voit
+// plus son propre camp. Vu de biais — et à 45°, où il se présente par sa
+// diagonale — il occupe bien plus de place, d'où une distance adaptative.
+const coins = [
+  { x: -7.5, y: 0, z: -7.5 },
+  { x: 7.5, y: 0, z: -7.5 },
+  { x: -7.5, y: 0, z: 7.5 },
+  { x: 7.5, y: 0, z: 7.5 }
+];
+
+const limites = board.viewLimits();
+const elevations = [limites.minElevation, 0.95, limites.maxElevation];
+const azimuths = [0, Math.PI / 4, Math.PI / 2, (3 * Math.PI) / 4];
+
+let cadreOk = true;
+let pire = 0;
+let rayonMin = Infinity;
+let rayonMax = 0;
+
+for (const elevation of elevations) {
+  for (const azimuth of azimuths) {
+    board.setOrbit({ elevation, azimuth, zoom: 1 });
+    const rayon = board.currentRadius();
+    rayonMin = Math.min(rayonMin, rayon);
+    rayonMax = Math.max(rayonMax, rayon);
+
+    for (const coin of coins) {
+      const p = board.project(coin);
+      const m = Math.max(Math.abs(p.x), Math.abs(p.y));
+      if (m > pire) pire = m;
+
+      if (m > 1) {
+        cadreOk = false;
+        console.log(
+          "    coin " + JSON.stringify(coin) + " à " + elevation + "/" + azimuth.toFixed(2) +
+            " -> " + p.x.toFixed(2) + "," + p.y.toFixed(2)
+        );
+      }
+    }
+  }
+}
+
+check("les quatre coins du plateau restent cadrés à toute rotation", cadreOk, pire.toFixed(3));
+check("le cadrage remplit le cadre sans le déborder", pire > 0.85 && pire <= 0.98, pire.toFixed(3));
+check(
+  "la distance de caméra s'adapte à l'angle (diagonale plus lointaine)",
+  rayonMax - rayonMin > 2,
+  { min: Number(rayonMin.toFixed(1)), max: Number(rayonMax.toFixed(1)) }
+);
+
+// s'éloigner ne doit jamais rogner : le zoom ne descend pas sous le cadrage
+board.setOrbit({ elevation: 0.95, azimuth: Math.PI / 4, zoom: limites.maxZoom });
+let eloigneOk = true;
+for (const coin of coins) {
+  const p = board.project(coin);
+  if (Math.abs(p.x) > 1 || Math.abs(p.y) > 1) eloigneOk = false;
+}
+check("s'éloigner garde tout le plateau dans le cadre", eloigneOk);
+
+// le dé doit rester visible et cliquable
+board.setOrbit({ elevation: 0.95, azimuth: 0, zoom: 1 });
+const diceProjection = board.project({ x: 0, y: 1.9, z: 8.9 });
+check(
+  "le dé est dans le cadre",
+  Math.abs(diceProjection.x) < 1 && Math.abs(diceProjection.y) < 1,
+  diceProjection
+);
+
+// le dé est posé DEVANT le plateau, pas dessus
+const { diceGroup: dice3d } = board.buildScene(geo);
+check(
+  "le dé est posé hors du plateau",
+  Math.abs(dice3d.position.z) > 7.5 || Math.abs(dice3d.position.x) > 7.5,
+  dice3d.position.toArray()
+);
+
+board.setOrbit({ elevation: 0.95, azimuth: 0, zoom: 1 });
+
+/* --------------------------------------------------- le dé garde sa face */
+
+section("Le dé garde sa face");
+
+function etatDe(overrides) {
+  return Object.assign(
+    {
+      status: "playing",
+      turn_color: geo.players[0],
+      dice: null,
+      legal_moves: [],
+      players: geo.players.map((color, seat) => ({
+        color,
+        seat,
+        tokens: ["base", "base", "base", "base"]
+      }))
+    },
+    overrides
+  );
+}
+
+board.update(etatDe({ dice: 5 }), geo.players[0]);
+check("le dé 3D prend la valeur reçue", board.diceValue() === 5, board.diceValue());
+
+// le serveur remet `dice` à zéro dès que le pion a bougé : la face ne doit pas
+// disparaître pour autant, les autres joueurs doivent pouvoir la lire
+board.update(etatDe({ dice: null, turn_color: geo.players[1] }), geo.players[0]);
+check("le dé 3D garde sa face après le coup", board.diceValue() === 5, board.diceValue());
+
+board.update(etatDe({ dice: null, turn_color: geo.players[2] }), geo.players[0]);
+check("la face tient sur plusieurs états successifs", board.diceValue() === 5, board.diceValue());
+
+board.update(etatDe({ dice: 2, turn_color: geo.players[2] }), geo.players[0]);
+check("un nouveau lancer change la face", board.diceValue() === 2, board.diceValue());
+
 /* ----------------------------------------------------------------- résultat */
 
 console.log("\n== Résultat ==");
