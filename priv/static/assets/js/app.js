@@ -234,6 +234,8 @@
   // ---------------------------------------------------------------- plateau
 
   function initGame(code) {
+    setupSound();
+
     const modal = $("#ask-name");
     const form = $("#ask-name-form");
 
@@ -282,6 +284,10 @@
         mySeat = payload.seat.seat;
         myColor = payload.seat.color;
         lastState = payload.state;
+
+        // on ne rejoue pas l'historique du journal à l'arrivée
+        if (sound()) soundedLog = payload.state.log || [];
+        lastTurnColor = null;
 
         buildBoard3D();
         renderState(payload.state);
@@ -355,10 +361,84 @@
     renderCamps(state);
     renderTurn(state);
     renderBanner(state);
+    playStateSounds(state);
 
     if (three() && three().isReady()) {
       three().update(state, myColor);
     }
+  }
+
+  /* ------------------------------------------------------------- bruitage */
+
+  // Journal déjà sonné, et tour précédent : ils servent à ne jouer chaque
+  // événement qu'une fois.
+  let soundedLog = [];
+  let lastTurnColor = null;
+
+  function sound() {
+    return window.LudoSound || null;
+  }
+
+  /**
+   * Joue les sons des événements nouveaux.
+   *
+   * Le son suit le journal du serveur plutôt que les clics : tout le monde
+   * entend donc la même chose, y compris les coups des adversaires et de l'IA.
+   */
+  function playStateSounds(state) {
+    const sounder = sound();
+    if (!sounder) return;
+
+    const entrees = sounder.newLogEntries(soundedLog, state.log || []);
+    soundedLog = state.log || [];
+
+    sounder.playEvents(entrees.map((entry) => entry.type));
+
+    // Mon tour commence : un repère discret, une seule fois par tour.
+    if (
+      state.status === "playing" &&
+      state.turn_color === myColor &&
+      state.turn_color !== lastTurnColor
+    ) {
+      sounder.play("turn");
+    }
+
+    lastTurnColor = state.turn_color;
+  }
+
+  /** Coupe ou remet le son, et met le bouton à jour. */
+  function setupSound() {
+    const sounder = sound();
+    const button = $("#sound");
+    if (!sounder) return;
+
+    // Les navigateurs exigent un geste avant de produire du son.
+    const unlock = () => {
+      sounder.unlock();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+
+    if (!button) return;
+
+    const sync = () => {
+      const muted = sounder.isMuted();
+      button.textContent = muted ? "Son coupé" : "Son activé";
+      button.setAttribute("aria-pressed", muted ? "false" : "true");
+    };
+
+    button.addEventListener("click", () => {
+      sounder.unlock();
+      sounder.toggleMuted();
+      sync();
+      // un repère sonore confirme le retour du son
+      if (!sounder.isMuted()) sounder.play("move");
+    });
+
+    sync();
   }
 
   function renderPlayers(state) {
@@ -605,6 +685,7 @@
     if (lastState.dice !== null) return;
 
     startSpin();
+    if (sound()) sound().play("roll");
 
     push(game, "roll", {}, (reply) => {
       lastState = reply.state;

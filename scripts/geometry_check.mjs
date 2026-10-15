@@ -134,6 +134,67 @@ globalThis.document = {
   }
 };
 
+/* ------------------------------------------------------------- bruitage --
+ * On charge le vrai module de son avec un contexte audio factice : chaque son
+ * produit des nœuds, qu'on compte et dont on relève la fréquence. C'est la
+ * seule façon de vérifier sans haut-parleur qu'un son a bien été joué.
+ */
+
+const sonsJoues = [];
+
+const contexteAudio = {
+  currentTime: 0,
+  sampleRate: 44100,
+  state: "running",
+  destination: {},
+  createOscillator() {
+    const noeud = {
+      type: "sine",
+      frequency: {
+        valeur: null,
+        setValueAtTime(v) {
+          this.valeur = v;
+          return this;
+        },
+        exponentialRampToValueAtTime(v) {
+          this.rampe = v;
+          return this;
+        }
+      },
+      connect: (d) => d,
+      start: () => sonsJoues.push({ genre: "note", frequence: noeud.frequency.valeur, rampe: noeud.frequency.rampe }),
+      stop: () => {}
+    };
+    return noeud;
+  },
+  createBufferSource() {
+    return {
+      connect: (d) => d,
+      start: () => sonsJoues.push({ genre: "bruit" }),
+      stop: () => {}
+    };
+  },
+  createGain() {
+    return {
+      gain: { setValueAtTime: () => {}, exponentialRampToValueAtTime: () => {} },
+      connect: (d) => d
+    };
+  },
+  createBiquadFilter() {
+    return { type: "", frequency: { value: 0 }, Q: { value: 0 }, connect: (d) => d };
+  },
+  createBuffer: (_c, n) => ({ getChannelData: () => new Float32Array(n) }),
+  resume() {}
+};
+
+globalThis.window.AudioContext = function () {
+  return contexteAudio;
+};
+
+(0, eval)(
+  readFileSync(join(here, "..", "priv/static/assets/js/sound.js"), "utf8")
+);
+
 (0, eval)(readFileSync(join(here, "..", "priv/static/assets/js/app.js"), "utf8"));
 
 // app.js s'expose sur `window`, qui est ici un objet factice et non globalThis
@@ -457,6 +518,115 @@ try {
   erreurHors = e;
 }
 check("choisir un camp hors partie ne plante pas", erreurHors === null, erreurHors && erreurHors.message);
+
+/* ------------------------------------------------------------ bruitage */
+
+section("Bruitage du jeu");
+
+{
+  const bruit = globalThis.window.LudoSound;
+
+  check("le module de son est chargé", Boolean(bruit), typeof bruit);
+  check("le contexte audio est prêt", bruit.isSupported() === true);
+
+  function jouer(etat) {
+    sonsJoues.length = 0;
+    api.renderState(etat);
+    return sonsJoues.slice();
+  }
+
+  // premier état : rien à sonner
+  const base = syntheticState({ log: [] });
+  check("aucun son sans événement", jouer(base).length === 0, jouer(base).length);
+
+  // le dé roule : c'est le dé qui s'arrête, pas un roulement (celui-ci est joué
+  // au clic, pour la réactivité)
+  const de = jouer(syntheticState({ log: [{ type: "rolled", color: "red", dice: 6 }] }));
+  check("le dé qui s'arrête sonne", de.length > 0, de.length);
+
+  const deplacement = jouer(syntheticState({ log: [{ type: "moved", color: "red", token: 1 }] }));
+  check(
+    "un déplacement joue le son d'avancée",
+    deplacement.some((s) => s.genre === "note" && s.frequence === 700),
+    deplacement
+  );
+
+  const capture = jouer(
+    syntheticState({ log: [{ type: "captured", color: "red", victim: "blue" }] })
+  );
+  check(
+    "une capture joue un son descendant",
+    capture.some((s) => s.genre === "note" && s.frequence === 620 && s.rampe === 150),
+    capture
+  );
+
+  const arrivee = jouer(syntheticState({ log: [{ type: "arrived", color: "red" }] }));
+  check("une arrivée joue un son montant", arrivee.length >= 1, arrivee);
+
+  const victoire = jouer(syntheticState({ log: [{ type: "won", color: "red" }] }));
+  check(
+    "la victoire joue une fanfare",
+    victoire.filter((s) => s.genre === "note").length >= 5,
+    victoire.length
+  );
+
+  // le même état ne doit pas sonner deux fois
+  const etat = syntheticState({ log: [{ type: "moved", color: "red", token: 2 }] });
+  jouer(etat);
+  const rejoue = jouer(etat);
+  check("le même état ne resonne pas", rejoue.length === 0, rejoue.length);
+
+  // un nouvel événement s'ajoute au journal existant
+  const suite = jouer(
+    syntheticState({
+      log: [
+        { type: "moved", color: "red", token: 2 },
+        { type: "captured", color: "red", victim: "blue" }
+      ]
+    })
+  );
+  check(
+    "seul le nouvel événement sonne",
+    suite.some((s) => s.frequence === 620) && !suite.some((s) => s.frequence === 700),
+    suite
+  );
+
+  // coupé, plus rien
+  bruit.setMuted(true);
+  const coupe = jouer(syntheticState({ log: [{ type: "won", color: "red" }] }));
+  check("coupé, aucun son ne sort", coupe.length === 0, coupe.length);
+  bruit.setMuted(false);
+
+  const tourPerdu = jouer(syntheticState({ log: [{ type: "stuck", color: "red" }] }));
+  check("un tour perdu sonne", tourPerdu.length > 0, tourPerdu.length);
+
+  // C'est à moi de jouer : un repère, une seule fois par tour.
+  api.setSeat(0, geo.players[0]);
+
+  // il faut un vrai changement de tour : les états précédents étaient déjà au
+  // mien, et le repère ne doit pas se répéter
+  jouer(syntheticState({ status: "playing", turn_color: geo.players[1] }));
+
+  const monTour = jouer(syntheticState({ status: "playing", turn_color: geo.players[0] }));
+  check(
+    "mon tour est annoncé par un repère sonore",
+    monTour.some((s) => s.frequence === 880),
+    monTour
+  );
+
+  const memeTour = jouer(syntheticState({ status: "playing", turn_color: geo.players[0] }));
+  check("le repère ne se répète pas à chaque état", memeTour.length === 0, memeTour.length);
+
+  const autreTour = jouer(syntheticState({ status: "playing", turn_color: geo.players[1] }));
+  check("le tour d'un autre ne sonne pas chez moi", autreTour.length === 0, autreTour.length);
+
+  const retour = jouer(syntheticState({ status: "playing", turn_color: geo.players[0] }));
+  check(
+    "mon tour suivant resonne",
+    retour.some((s) => s.frequence === 880),
+    retour
+  );
+}
 
 /* -------------------------------------------------------------- bannière */
 

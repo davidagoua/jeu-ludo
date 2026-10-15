@@ -170,6 +170,12 @@ Quelques partis pris qui expliquent la structure :
   nœuds SVG : les déplacements de pions, le roulement du dé et les pulsations
   sont animés image par image, sans reflow. La vue est orthographique et
   verticale, donc le rendu reste celui d'un plateau 2D classique.
+* **Le bruitage est synthétisé, pas échantillonné.** Aucun fichier son : les huit
+  sons (dé qui roule, dé qui s'arrête, pion qui avance, capture, arrivée,
+  victoire, tour perdu, c'est à vous) sont fabriqués par des oscillateurs et du
+  bruit filtré avec la Web Audio API. Quelques kilo-octets au lieu de plusieurs
+  mégaoctets, et rien à licencier. Un bouton coupe le son, le réglage est
+  conservé d'une partie à l'autre.
 * **La visée au doigt est large.** Un pion ne fait qu'une douzaine de pixels sur
   un téléphone. Chacun porte donc une zone de touche invisible élargie, et un
   appui près d'un pion jouable le sélectionne (tolérance d'environ 40 px de
@@ -194,7 +200,7 @@ de frappe ne se verrait sinon qu'à l'exécution, chez l'utilisateur.
 ## Tests
 
 ```bash
-mix test                      # 179 tests : règles, IA, lobby, canaux, pages
+mix test                      # 181 tests : règles, IA, lobby, canaux, pages
 
 # serveur lancé (mix phx.server ou docker compose up)
 node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
@@ -203,6 +209,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
 node scripts/geometry_check.mjs /tmp/geometry.json   # 48 vérifications : panneau, camps, dé
 node scripts/three_check.mjs /tmp/geometry.json      # 88 vérifications : scène, cadrage, dés, clic, doigt
+node scripts/sound_check.mjs                         # 57 vérifications : bruitage, sourdine
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)
 node scripts/dump_board_top.mjs /tmp/geometry.json /tmp/board_top.json
@@ -222,8 +229,15 @@ l'un ni l'autre n'ont besoin de dépendance (Node 22+).
 
 `scripts/geometry_check.mjs` charge `app.js` avec un DOM factice et lui injecte
 la géométrie réelle du serveur : il vérifie que chaque position de pion tombe sur
-la bonne case, que le plateau se construit et que les quatre états se rendent
-sans exception. C'est ce qui permet de tester le client sans navigateur.
+la bonne case, que le plateau se construit, que les quatre états se rendent sans
+exception et que le bruitage réagit aux bons événements. C'est ce qui permet de
+tester le client sans navigateur.
+
+`scripts/sound_check.mjs` installe un contexte audio factice qui compte les nœuds
+créés : c'est la seule façon de vérifier sans haut-parleur qu'un son produit bien
+quelque chose, et qu'un son coupé ne produit rien. Il couvre aussi la lecture du
+réglage au chargement suivant et le repérage des événements nouveaux dans le
+journal borné du serveur.
 
 ## Configuration
 

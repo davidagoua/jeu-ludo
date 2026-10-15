@@ -46,6 +46,28 @@ defmodule LudoWeb.PageControllerTest do
     end
   end
 
+  describe "GET /partie/:code — bruitage" do
+    test "la page de jeu charge le bruitage et propose de le couper", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-son-1111")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      assert html =~ "/assets/js/sound.js"
+      assert html =~ ~s(id="sound")
+      assert html =~ "Son activé"
+      assert html =~ ~s(aria-pressed="true")
+    end
+
+    test "le bruitage est chargé avant le client qui l'utilise", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-son-2222")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      position_son = :binary.match(html, "/assets/js/sound.js") |> elem(0)
+      position_client = :binary.match(html, "/assets/js/app.js") |> elem(0)
+
+      assert position_son < position_client, "sound.js doit être chargé avant app.js"
+    end
+  end
+
   describe "GET /partie/:code" do
     test "affiche le plateau d'une partie existante", %{conn: conn} do
       {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-1111")
