@@ -1,0 +1,79 @@
+<main class="page rules-page">
+  <header class="hero">
+    <h1>Comment jouer</h1>
+    <p class="tagline">Les règles appliquées par le jeu, sans surprise.</p>
+  </header>
+
+  <section class="card prose">
+    <h2>But du jeu</h2>
+    <p>
+      Chaque joueur a quatre pions dans sa base. Le premier à ramener ses quatre
+      pions jusqu'au centre remporte la partie.
+    </p>
+
+    <h2>Déroulement</h2>
+    <ul>
+      <li>Chacun son tour, on lance le dé et on déplace <strong>un</strong> pion.</li>
+      <li>Un <strong>6</strong> est nécessaire pour sortir un pion de sa base.</li>
+      <li>Le pion avance dans le sens des aiguilles d'une montre sur les 56 cases du circuit.</li>
+      <li>
+        Après un tour complet, le pion entre dans la colonne colorée de son joueur, puis au centre.
+      </li>
+      <li>
+        Il faut le <strong>compte exact</strong> pour atteindre le centre : un dé trop
+        grand ne permet pas de jouer ce pion.
+      </li>
+    </ul>
+
+    <h2>Tours supplémentaires</h2>
+    <p>On rejoue immédiatement dans trois cas :</p>
+    <ul>
+      <li>on a fait un <strong>6</strong> ;</li>
+      <li>on a <strong>capturé</strong> un pion adverse ;</li>
+      <li>on a <strong>amené un pion à l'arrivée</strong>.</li>
+    </ul>
+    <p class="warn">
+      Trois 6 d'affilée font perdre le tour : c'est la règle classique qui évite
+      les enchaînements infinis.
+    </p>
+
+    <h2>Captures</h2>
+    <ul>
+      <li>Atterrir sur un pion adverse le renvoie à sa base.</li>
+      <li>
+        Les <strong>cases sûres</strong> (les quatre départs et les quatre cases
+        marquées d'une étoile) protègent : on y cohabite sans capture.
+      </li>
+      <li>Un pion dans sa colonne d'arrivée ne peut plus être capturé.</li>
+    </ul>
+
+    <h2>Choix de variante</h2>
+    <p>
+      Les <em>blocs</em> ne sont pas appliqués : deux pions d'un même joueur
+      peuvent occuper la même case, et les adversaires peuvent passer par-dessus.
+      C'est la variante la plus répandue en ligne, et elle évite qu'une partie
+      reste bloquée.
+    </p>
+
+    <h2>En cas d'absence</h2>
+    <p>
+      Si un joueur ne joue pas pendant 60 secondes, le serveur joue à sa place
+      pour que la partie continue. Un joueur qui recharge la page retrouve son
+      siège automatiquement.
+    </p>
+
+    <h2>Commandes</h2>
+    <ul>
+      <li>Cliquez sur <strong>Lancer le dé</strong> quand c'est votre tour.</li>
+      <li>
+        Cliquez ensuite sur le pion à déplacer : les pions jouables sont mis en
+        évidence.
+      </li>
+      <li>Quand un seul coup est possible, il est joué automatiquement.</li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <a href={~p"/"}>← Retour à l'accueil</a>
+  </footer>
+</main>

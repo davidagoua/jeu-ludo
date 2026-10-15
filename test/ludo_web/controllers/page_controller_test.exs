@@ -1,0 +1,63 @@
+defmodule LudoWeb.PageControllerTest do
+  use LudoWeb.ConnCase
+
+  describe "GET /" do
+    test "affiche le pseudo, les quatre modes et la liste des parties", %{conn: conn} do
+      conn = get(conn, ~p"/")
+      html = html_response(conn, 200)
+
+      assert html =~ "Votre pseudo"
+      assert html =~ ~s(name="mode")
+      assert html =~ "Solo contre l&#39;IA"
+      assert html =~ "2 joueurs"
+      assert html =~ "3 joueurs"
+      assert html =~ "4 joueurs"
+      assert html =~ "Parties ouvertes"
+      # le client temps réel est bien chargé
+      assert html =~ "/assets/js/phoenix.min.js"
+      assert html =~ "/assets/js/app.js"
+    end
+  end
+
+  describe "GET /regles" do
+    test "explique les règles", %{conn: conn} do
+      html = get(conn, ~p"/regles") |> html_response(200)
+
+      assert html =~ "Comment jouer"
+      assert html =~ "Trois 6"
+      assert html =~ "cases sûres"
+    end
+  end
+
+  describe "GET /partie/:code" do
+    test "affiche le plateau d'une partie existante", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-1111")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      assert html =~ code
+      assert html =~ ~s(id="board")
+      assert html =~ ~s(data-code="#{code}")
+      assert html =~ "2 joueurs"
+    end
+
+    test "accepte un code en minuscules", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-2222")
+      html = get(conn, ~p"/partie/#{String.downcase(code)}") |> html_response(200)
+      assert html =~ code
+    end
+
+    test "redirige vers l'accueil si la partie n'existe pas", %{conn: conn} do
+      conn = get(conn, ~p"/partie/ZZZZ")
+      assert redirected_to(conn) == ~p"/"
+      assert Phoenix.Flash.get(conn.assigns.flash, :error) =~ "ZZZZ"
+    end
+  end
+
+  describe "GET /sante" do
+    test "renvoie un état JSON", %{conn: conn} do
+      body = get(conn, ~p"/sante") |> json_response(200)
+      assert body["status"] == "ok"
+      assert is_integer(body["games"])
+    end
+  end
+end

@@ -1,0 +1,58 @@
+# Déploiement du jeu de Ludo.
+#
+#   docker compose up -d --build
+#
+# puis ouvrez http://localhost:4000
+#
+# Aucune base de données : les parties vivent en mémoire dans le nœud Elixir.
+# Un seul conteneur suffit donc, et `docker compose down` ne laisse rien
+# derrière lui.
+
+services:
+  ludo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ludo:latest
+    container_name: ludo
+    restart: unless-stopped
+
+    ports:
+      - "${LUDO_PORT:-4000}:4000"
+
+    environment:
+      # Le serveur écoute sur 4000 à l'intérieur du conteneur.
+      PORT: "4000"
+
+      # Hôte public, utilisé pour construire les URL absolues.
+      PHX_HOST: "${PHX_HOST:-localhost}"
+      PHX_SCHEME: "${PHX_SCHEME:-http}"
+
+      # Phoenix vérifie l'origine des WebSockets. En accès direct par IP ou
+      # derrière un reverse proxy, `PHX_HOST` ne correspond pas à ce que le
+      # navigateur envoie : on désactive donc la vérification par défaut.
+      #
+      #   CHECK_ORIGIN=false           -> aucune vérification (valeur par défaut ici)
+      #   CHECK_ORIGIN=ludo.exemple.fr -> une origine précise
+      #   CHECK_ORIGIN=a.fr,b.fr       -> plusieurs origines
+      CHECK_ORIGIN: "${CHECK_ORIGIN:-false}"
+
+      # Facultatif. Si absent ou vide, une clé est tirée au démarrage : aucune
+      # session serveur n'est utilisée, cela n'a donc pas de conséquence.
+      # Fixez-la si vous voulez que les cookies survivent à un redémarrage.
+      SECRET_KEY_BASE: "${SECRET_KEY_BASE:-}"
+
+    healthcheck:
+      # Vérification TCP sans installer d'outil supplémentaire dans l'image.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4000"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Les parties sont en mémoire : on limite la taille du journal Docker.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,56 @@
+<main class="page game-page" id="game" data-page="game" data-code={@code}>
+  <header class="game-header">
+    <a href={~p"/"} class="back">← Accueil</a>
+    <h1>
+      Salon <span class="code">{@code}</span>
+      <span class="mode-tag">{@lobby.mode_label}</span>
+    </h1>
+    <button id="copy-link" class="secondary small" type="button">Copier le lien</button>
+  </header>
+
+  <div class="game-layout">
+    <aside class="panel">
+      <h2>Joueurs</h2>
+      <ul class="players" id="players"></ul>
+    </aside>
+
+    <div class="board-wrap">
+      <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Plateau de Ludo"></svg>
+      <div class="banner" id="banner" hidden></div>
+    </div>
+
+    <aside class="panel">
+      <h2>Tour en cours</h2>
+      <p class="turn" id="turn">En attente…</p>
+
+      <div class="dice-box">
+        <div class="dice" id="dice" aria-live="polite">–</div>
+        <button id="roll" class="primary" type="button" disabled>Lancer le dé</button>
+      </div>
+
+      <p class="hint" id="hint"></p>
+
+      <div class="actions" id="host-actions" hidden>
+        <button id="fill-bots" class="secondary" type="button">
+          Compléter avec des IA et démarrer
+        </button>
+      </div>
+
+      <h2>Journal</h2>
+      <ul class="log" id="log"></ul>
+    </aside>
+  </div>
+
+  <div class="modal" id="ask-name" hidden>
+    <form class="card" id="ask-name-form">
+      <h2>Rejoindre la partie</h2>
+      <label class="field">
+        <span>Votre pseudo</span>
+        <input id="ask-pseudo" type="text" maxlength="18" placeholder="Camille" />
+      </label>
+      <button class="primary" type="submit">Entrer dans le salon {@code}</button>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+</main>

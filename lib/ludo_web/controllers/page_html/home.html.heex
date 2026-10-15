@@ -1,0 +1,87 @@
+<main class="page" id="lobby" data-page="lobby">
+  <header class="hero">
+    <h1>Ludo</h1>
+    <p class="tagline">
+      Jouez à 2, 3 ou 4 — ou contre l'IA. Aucun compte à créer, juste un pseudo.
+    </p>
+  </header>
+
+  <div class="columns">
+    <section class="card">
+      <h2>Créer une partie</h2>
+
+      <label class="field">
+        <span>Votre pseudo</span>
+        <input
+          id="pseudo"
+          type="text"
+          maxlength="18"
+          placeholder="Camille"
+          autocomplete="nickname"
+        />
+      </label>
+
+      <fieldset class="modes">
+        <legend>Mode de jeu</legend>
+
+        <label :for={mode <- @modes} class="mode">
+          <input type="radio" name="mode" value={mode.key} checked={mode.key == "vs_ai"} />
+          <span class="mode-body">
+            <span class="mode-label">{mode.label}</span>
+            <span class="mode-hint">{mode.hint}</span>
+          </span>
+        </label>
+      </fieldset>
+
+      <button id="create" class="primary" type="button">Créer la partie</button>
+    </section>
+
+    <section class="card">
+      <h2>Rejoindre une partie</h2>
+
+      <label class="field">
+        <span>Code du salon</span>
+        <input id="code" type="text" maxlength="4" placeholder="ABCD" autocapitalize="characters" />
+      </label>
+
+      <button id="join" class="primary" type="button">Rejoindre</button>
+
+      <p class="or">ou</p>
+
+      <button id="quick-join" class="secondary" type="button">
+        Rejoindre une partie ouverte
+      </button>
+
+      <p class="hint">
+        Le pseudo saisi ci-contre sert aussi à rejoindre. Vous reprendrez votre
+        place si vous rechargez la page.
+      </p>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>Parties ouvertes <span class="badge" id="games-count">{length(@games)}</span></h2>
+
+    <ul class="games" id="games">
+      <li :for={game <- @games} class="game" data-code={game.code}>
+        <span class="game-code">{game.code}</span>
+        <span class="game-mode">{game.mode_label}</span>
+        <span class="game-players">{game.taken}/{game.seats} joueurs</span>
+        <span class="game-host">hôte : {game.host}</span>
+        <button class="secondary small join-game" type="button" data-code={game.code}>
+          Rejoindre
+        </button>
+      </li>
+    </ul>
+
+    <p :if={@games == []} class="empty" id="games-empty">
+      Aucune partie ouverte pour l'instant — créez la première !
+    </p>
+  </section>
+
+  <footer class="foot">
+    <a href={~p"/regles"}>Comment jouer ?</a>
+  </footer>
+
+  <div class="toast" id="toast" hidden></div>
+</main>
