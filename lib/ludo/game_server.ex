@@ -73,8 +73,21 @@ defmodule Ludo.GameServer do
 
   defp call(code, message) do
     case lookup(code) do
-      {:ok, pid} -> GenServer.call(pid, message, 5_000)
-      :error -> {:error, :not_found}
+      {:ok, pid} ->
+        # Le salon peut disparaître entre la recherche dans le registre et
+        # l'appel (fin de partie, nettoyage automatique) : un salon qui s'en va
+        # doit répondre « introuvable », pas faire planter l'appelant.
+        try do
+          GenServer.call(pid, message, 5_000)
+        catch
+          :exit, {:noproc, _} -> {:error, :not_found}
+          :exit, {:normal, _} -> {:error, :not_found}
+          :exit, {:shutdown, _} -> {:error, :not_found}
+          :exit, {:killed, _} -> {:error, :not_found}
+        end
+
+      :error ->
+        {:error, :not_found}
     end
   end
 

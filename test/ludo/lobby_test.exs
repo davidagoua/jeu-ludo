@@ -203,6 +203,23 @@ defmodule Ludo.LobbyTest do
 
       assert {:error, :not_found} = GameServer.join(code, "Bob", unique_id())
     end
+
+    test "rejoindre un salon en train de mourir échoue proprement" do
+      {:ok, code} = Lobby.create_game(:p2, "Alice", unique_id())
+      Lobby.close(code)
+
+      # Le lobby oublie la partie avant que le registre ne soit nettoyé : il
+      # existe une fenêtre pendant laquelle le pid est encore inscrit mais déjà
+      # mort. L'appel doit alors répondre « introuvable » et non sortir en
+      # erreur — sinon une requête d'un joueur ferait planter le canal.
+      wait_until(fn -> Lobby.get_game(code) == :error end)
+
+      for _ <- 1..50 do
+        assert {:error, :not_found} = GameServer.join(code, "Bob", unique_id())
+        assert {:error, :not_found} = GameServer.roll(code, "Bob")
+        assert {:error, :not_found} = GameServer.fill_bots(code, "Bob")
+      end
+    end
   end
 
   describe "le lobby ne divulgue pas les identifiants" do
