@@ -210,6 +210,55 @@ defmodule Ludo.Game do
     end
   end
 
+  @doc """
+  Installe un joueur sur un camp de son choix, tant que la partie n'a pas démarré.
+
+  Les camps sont libres : le premier arrivé prend celui qu'il veut, et le siège 0
+  (le rouge) joue en premier. Un siège déjà occupé est refusé, sauf s'il est déjà
+  le sien.
+  """
+  @spec choose_seat(t(), term(), integer()) :: {:ok, t(), list()} | {:error, atom()}
+  def choose_seat(%__MODULE__{status: :waiting} = game, player_id, seat) do
+    player = Enum.find(game.players, &(&1.id == player_id))
+
+    cond do
+      player == nil ->
+        {:error, :not_in_game}
+
+      not is_integer(seat) or seat < 0 or seat >= game.seats ->
+        {:error, :unknown_seat}
+
+      player.seat == seat ->
+        {:ok, game, []}
+
+      Enum.any?(game.players, &(&1.seat == seat)) ->
+        {:error, :seat_taken}
+
+      true ->
+        color = Board.seat_color(seat)
+        previous = player.color
+
+        players =
+          game.players
+          |> Enum.map(fn p ->
+            if p.id == player_id, do: %{p | seat: seat, color: color}, else: p
+          end)
+          |> Enum.sort_by(& &1.seat)
+
+        # les pions suivent le joueur : ils passent dans sa nouvelle couleur
+        tokens =
+          game.tokens
+          |> Map.delete(previous)
+          |> Map.put(color, Map.get(game.tokens, previous, List.duplicate(:base, 4)))
+
+        game = %{game | players: players, tokens: tokens, version: game.version + 1}
+
+        {:ok, game, []}
+    end
+  end
+
+  def choose_seat(%__MODULE__{}, _player_id, _seat), do: {:error, :already_started}
+
   @doc "Ajoute un pion-joueur automatisé sur le premier siège libre."
   def add_bot(%__MODULE__{} = game) do
     cond do

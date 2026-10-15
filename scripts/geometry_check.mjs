@@ -366,6 +366,98 @@ api.renderState(
 check("en fin de partie, plus de liseré", !dice.classList.contains("current"));
 check("et le dé est blanc", shownFace() === null, shownFace());
 
+/* ------------------------------------------------------- choix du camp */
+
+section("Choix du camp");
+
+const camps = elementFor("#camps");
+const campsRow = elementFor("#camps-row");
+
+// en attente : le sélecteur est visible, un bouton par siège
+api.renderState(
+  syntheticState({
+    status: "waiting",
+    seats: 4,
+    players: [
+      { seat: 0, name: "Alice", color: geo.players[0], kind: "human", connected: true, tokens: ["base", "base", "base", "base"], finished: 0 },
+      { seat: 2, name: "Bob", color: geo.players[2], kind: "human", connected: true, tokens: ["base", "base", "base", "base"], finished: 0 }
+    ]
+  })
+);
+
+check("en attente, le sélecteur de camp est visible", camps.hidden === false);
+
+const boutons = campsRow.children;
+check("un bouton par camp", boutons.length === 4, boutons.length);
+
+check(
+  "chaque bouton porte la couleur de son siège",
+  boutons.every((b, i) => {
+    const point = b.children.find((c) => c.classList.contains("camp-dot"));
+    const couleur = (geo.seat_colors || geo.players)[i];
+    return point && point.style.background === geo.colors[couleur];
+  })
+);
+
+check(
+  "mon camp est marqué",
+  boutons[0] && boutons[0].classList.contains("mine")
+);
+
+check(
+  "les camps pris par d'autres sont désactivés",
+  boutons[2] && boutons[2].disabled === true
+);
+
+check(
+  "les camps libres sont cliquables",
+  boutons[1] && boutons[1].disabled === false && boutons[3].disabled === false
+);
+
+check(
+  "un camp libre est annoncé comme tel",
+  boutons[1] &&
+    boutons[1].children.some((c) => c.classList.contains("camp-label") && c.textContent === "libre")
+);
+
+check(
+  "mon camp affiche « vous »",
+  boutons[0] &&
+    boutons[0].children.some((c) => c.classList.contains("camp-label") && c.textContent === "vous")
+);
+
+// en jeu, le sélecteur disparaît
+api.renderState(syntheticState({ status: "playing" }));
+check("en cours de partie, le sélecteur est masqué", camps.hidden === true);
+
+// cliquer sur un camp libre envoie le choix
+api.renderState(
+  syntheticState({
+    status: "waiting",
+    seats: 4,
+    players: [
+      { seat: 0, name: "Alice", color: geo.players[0], kind: "human", connected: true, tokens: ["base", "base", "base", "base"], finished: 0 }
+    ]
+  })
+);
+
+let erreur = null;
+try {
+  api.chooseSeat(2);
+} catch (e) {
+  erreur = e;
+}
+check("choisir un camp ne lève pas d'exception", erreur === null, erreur && erreur.message);
+
+// sans partie en cours, le choix est ignoré sans planter
+let erreurHors = null;
+try {
+  api.chooseSeat(1);
+} catch (e) {
+  erreurHors = e;
+}
+check("choisir un camp hors partie ne plante pas", erreurHors === null, erreurHors && erreurHors.message);
+
 /* -------------------------------------------------------------- bannière */
 
 section("Bannière");

@@ -4,7 +4,8 @@ defmodule LudoWeb.GameChannel do
 
   À la connexion, le joueur est installé sur un siège par le `Ludo.GameServer`
   (ou le reprend s'il revient avec le même `player_id`). Le canal relaie ensuite
-  les intentions du client (`roll`, `move`, `start`, `fill_bots`) et rediffuse
+  les intentions du client (`roll`, `move`, `start`, `fill_bots`, `choose_seat`)
+  et rediffuse
   chaque changement d'état à tous les joueurs du salon.
   """
 
@@ -53,6 +54,13 @@ defmodule LudoWeb.GameChannel do
     forward(socket, GameServer.fill_bots(socket.assigns.code, socket.assigns.player_id))
   end
 
+  def handle_in("choose_seat", payload, socket) do
+    forward(
+      socket,
+      GameServer.choose_seat(socket.assigns.code, socket.assigns.player_id, payload["seat"])
+    )
+  end
+
   def handle_in("state", _payload, socket) do
     case GameServer.public_state(socket.assigns.code) do
       {:ok, state} -> {:reply, {:ok, %{state: state}}, socket}
@@ -92,6 +100,9 @@ defmodule LudoWeb.GameChannel do
   defp message(:illegal_move), do: "Ce coup n'est pas autorisé."
   defp message(:not_host), do: "Seul l'hôte peut faire cela."
   defp message(:full), do: "Cette partie est complète."
+  defp message(:seat_taken), do: "Ce camp est déjà pris."
+  defp message(:unknown_seat), do: "Ce camp n'existe pas."
+  defp message(:not_in_game), do: "Vous n'êtes pas dans cette partie."
   defp message(:already_started), do: "Cette partie a déjà commencé."
   defp message(:not_enough_players), do: "Il manque des joueurs."
   defp message(:not_found), do: "Cette partie n'existe plus."

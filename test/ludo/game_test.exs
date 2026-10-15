@@ -470,6 +470,91 @@ defmodule Ludo.GameTest do
     end
   end
 
+  # --- choix du camp --------------------------------------------------------
+
+  describe "choix du camp" do
+    test "un joueur prend le camp qu'il veut" do
+      game = new_game(:p4, "Alice", "a")
+      assert Enum.find(game.players, &(&1.id == "a")).seat == 0
+
+      {:ok, game, []} = Game.choose_seat(game, "a", 2)
+      joueur = Enum.find(game.players, &(&1.id == "a"))
+
+      assert joueur.seat == 2
+      assert joueur.color == Board.seat_color(2)
+      # le siège 0 devient libre : c'est là que joue le premier joueur
+      assert Enum.all?(game.players, &(&1.seat != 0))
+    end
+
+    test "les pions suivent le joueur dans son nouveau camp" do
+      game = new_game(:p4, "Alice", "a")
+      ancienne = Board.seat_color(0)
+      nouvelle = Board.seat_color(3)
+
+      assert Map.has_key?(game.tokens, ancienne)
+
+      {:ok, game, []} = Game.choose_seat(game, "a", 3)
+
+      refute Map.has_key?(game.tokens, ancienne)
+      assert game.tokens[nouvelle] == [:base, :base, :base, :base]
+    end
+
+    test "un camp déjà pris est refusé" do
+      game = new_game(:p4, "Alice", "a")
+      {:ok, game, _player, :joined} = Game.add_player(game, "Bob", "b")
+      assert Enum.find(game.players, &(&1.id == "b")).seat == 1
+
+      assert {:error, :seat_taken} = Game.choose_seat(game, "a", 1)
+      # rien n'a bougé
+      assert Enum.find(game.players, &(&1.id == "a")).seat == 0
+    end
+
+    test "un siège hors de la partie est refusé" do
+      game = new_game(:p2, "Alice", "a")
+
+      assert {:error, :unknown_seat} = Game.choose_seat(game, "a", 2)
+      assert {:error, :unknown_seat} = Game.choose_seat(game, "a", -1)
+      assert {:error, :unknown_seat} = Game.choose_seat(game, "a", "rouge")
+    end
+
+    test "un joueur absent de la partie ne peut pas choisir" do
+      game = new_game(:p2, "Alice", "a")
+      assert {:error, :not_in_game} = Game.choose_seat(game, "inconnu", 1)
+    end
+
+    test "on ne change plus de camp une fois la partie lancée" do
+      game = started(:p2)
+      assert {:error, :already_started} = Game.choose_seat(game, "a", 1)
+    end
+
+    test "choisir son camp actuel ne change rien" do
+      game = new_game(:p4, "Alice", "a")
+      version = game.version
+
+      assert {:ok, game, []} = Game.choose_seat(game, "a", 0)
+      assert game.version == version
+      assert Enum.find(game.players, &(&1.id == "a")).seat == 0
+    end
+
+    test "celui qui prend le siège 0 joue en premier" do
+      game = new_game(:p4, "Alice", "a")
+      {:ok, game, _player, :joined} = Game.add_player(game, "Bob", "b")
+
+      # Alice libère le siège 0, que Bob s'empresse de prendre : c'est lui qui
+      # jouera en premier
+      {:ok, game, []} = Game.choose_seat(game, "a", 3)
+      {:ok, game, []} = Game.choose_seat(game, "b", 0)
+
+      {:ok, game, _player, :joined} = Game.add_player(game, "Chloé", "c")
+      {:ok, game, _player, :joined} = Game.add_player(game, "Dan", "d")
+
+      {:ok, game} = Game.start(game)
+
+      assert Game.current_player(game).name == "Bob"
+      assert Game.current_player(game).color == Board.seat_color(0)
+    end
+  end
+
   # --- état public ---------------------------------------------------------
 
   describe "état public" do

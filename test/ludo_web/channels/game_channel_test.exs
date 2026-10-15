@@ -239,6 +239,47 @@ defmodule LudoWeb.GameChannelTest do
       assert length(state.players) == 4
       assert Enum.count(state.players, &(&1.kind == "bot")) == 2
     end
+
+    test "un joueur peut choisir son camp avant le début" do
+      {code, host} = create(:p4)
+      {:ok, reply, host_socket} = join_game(code, "Dan", host)
+
+      # l'hôte est arrivé en premier : il occupe le siège 0
+      assert hd(reply.state.players).seat == 0
+
+      ref = push(host_socket, "choose_seat", %{seat: 2})
+      assert_reply ref, :ok, %{state: state}
+
+      # `create/1` a déjà installé l'hôte, sous le nom « Alice »
+      joueur = Enum.find(state.players, &(&1.name == "Alice"))
+      assert joueur.seat == 2
+      # la couleur suit le siège : le siège 2 est le troisième camp. L'état
+      # public est sérialisé, la couleur y est donc une chaîne.
+      assert joueur.color == to_string(Ludo.Board.seat_color(2))
+      refute joueur.color == hd(reply.state.players).color
+    end
+
+    test "un camp déjà pris est refusé" do
+      {code, host} = create(:p4)
+      {:ok, _reply, host_socket} = join_game(code, "Dan", host)
+      {:ok, _reply, other_socket} = join_game(code, "Eve", id())
+
+      # Eve occupe le siège 1 : Dan ne peut pas le prendre
+      ref = push(host_socket, "choose_seat", %{seat: 1})
+      assert_reply ref, :error, %{reason: "seat_taken"}
+    end
+
+    test "on ne change plus de camp une fois la partie lancée" do
+      {code, host} = create(:p2)
+      {:ok, _reply, host_socket} = join_game(code, "Dan", host)
+      {:ok, reply, _other} = join_game(code, "Eve", id())
+
+      # à deux joueurs avec :p2, la partie démarre aussitôt
+      assert reply.state.status == "playing"
+
+      ref = push(host_socket, "choose_seat", %{seat: 1})
+      assert_reply ref, :error, %{reason: "already_started"}
+    end
   end
 
   describe "partie en solo" do

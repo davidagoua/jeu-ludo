@@ -318,6 +318,7 @@
   function renderState(state) {
     if (!state || !geometry) return;
     renderPlayers(state);
+    renderCamps(state);
     renderTurn(state);
     renderBanner(state);
 
@@ -364,6 +365,69 @@
       li.appendChild(meta);
       list.appendChild(li);
     }
+  }
+
+  /**
+   * Sélecteur de camp, affiché tant que la partie n'a pas démarré.
+   *
+   * Chaque siège a sa couleur ; le siège 0 joue en premier. Un camp déjà occupé
+   * ne peut pas être pris, le sien est marqué.
+   */
+  function renderCamps(state) {
+    const box = $("#camps");
+    const row = $("#camps-row");
+    if (!box || !row) return;
+
+    const waiting = state.status === "waiting";
+    box.hidden = !waiting;
+    if (!waiting) return;
+
+    const couleurs = (geometry && geometry.seat_colors) || geometry.players;
+
+    row.innerHTML = "";
+
+    for (let seat = 0; seat < state.seats; seat++) {
+      const occupant = state.players.find((p) => p.seat === seat);
+      const mien = occupant && occupant.color === myColor;
+      const bouton = document.createElement("button");
+
+      bouton.type = "button";
+      bouton.className = "camp" + (mien ? " mine" : "");
+      bouton.disabled = Boolean(occupant) && !mien;
+
+      if (occupant) {
+        bouton.title =
+          (occupant.kind === "bot" ? "IA " : "") + occupant.name + (mien ? " (vous)" : "");
+      } else {
+        bouton.title = "Camp libre — cliquez pour le prendre";
+      }
+
+      const point = document.createElement("span");
+      point.className = "camp-dot";
+      point.style.background = geometry.colors[couleurs[seat]];
+
+      const label = document.createElement("span");
+      label.className = "camp-label";
+      label.textContent = occupant ? (mien ? "vous" : occupant.name) : "libre";
+
+      bouton.appendChild(point);
+      bouton.appendChild(label);
+
+      if (!occupant) {
+        bouton.addEventListener("click", () => choisirCamp(seat));
+      }
+
+      row.appendChild(bouton);
+    }
+  }
+
+  function choisirCamp(seat) {
+    if (!game) return;
+
+    push(game, "choose_seat", { seat: seat }, (reply) => {
+      lastState = reply.state;
+      renderState(reply.state);
+    });
   }
 
   function renderTurn(state) {
@@ -641,6 +705,7 @@
         myColor = color;
       },
       rollDice: rollDice,
+      chooseSeat: choisirCamp,
       renderState: renderState
     }
   };

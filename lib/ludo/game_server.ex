@@ -88,6 +88,7 @@ defmodule Ludo.GameServer do
   def join(code, name, player_id), do: call(code, {:join, name, player_id})
   def start_game(code, player_id), do: call(code, {:start, player_id})
   def fill_bots(code, player_id), do: call(code, {:fill_bots, player_id})
+  def choose_seat(code, player_id, seat), do: call(code, {:choose_seat, player_id, seat})
   def roll(code, player_id), do: call(code, {:roll, player_id})
   def move(code, player_id, token), do: call(code, {:move, player_id, token})
   def leave(code, player_id), do: cast(code, {:leave, player_id})
@@ -176,6 +177,10 @@ defmodule Ludo.GameServer do
     else
       {:reply, {:error, :not_host}, state}
     end
+  end
+
+  def handle_call({:choose_seat, player_id, seat}, _from, state) do
+    reply(state, Game.choose_seat(state.game, player_id, seat))
   end
 
   def handle_call({:fill_bots, player_id}, _from, state) do

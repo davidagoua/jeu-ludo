@@ -41,9 +41,12 @@ Testé avec Elixir 1.19.3 / OTP 28 et Phoenix 1.8.
    *Créer la partie*.
 2. Partagez le **code du salon** (4 caractères) ou le lien de la page : les
    autres joueurs rejoignent avec ce code, ou via *Rejoindre une partie ouverte*.
-3. La partie démarre **dès que tous les sièges sont pris**. L'hôte peut aussi
+3. **Choisissez votre camp** : en attendant les autres joueurs, un sélecteur
+   propose les quatre camps avec leur occupant. Les camps sont libres, celui du
+   siège 0 (le rouge) joue en premier.
+4. La partie démarre **dès que tous les sièges sont pris**. L'hôte peut aussi
    cliquer sur *Compléter avec des IA et démarrer* pour ne pas attendre.
-4. **Cliquez sur le dé** pour lancer, puis sur un pion en surbrillance.
+5. **Cliquez sur le dé** pour lancer, puis sur un pion en surbrillance.
 
 Le plateau est **plat, vu de dessus**, et dessiné en WebGL (Three.js) : la
 molette éloigne la vue, les pions bondissent de case en case au lieu de se
@@ -186,7 +189,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
-node scripts/geometry_check.mjs /tmp/geometry.json   # 37 vérifications : panneau, dé, bannière
+node scripts/geometry_check.mjs /tmp/geometry.json   # 48 vérifications : panneau, camps, dé
 node scripts/three_check.mjs /tmp/geometry.json      # 79 vérifications : scène, cadrage, dés, clic
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)

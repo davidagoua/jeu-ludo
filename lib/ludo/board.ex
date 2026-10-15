@@ -154,6 +154,14 @@ defmodule Ludo.Board do
   @doc "Le nom de fichier de la planche de chaque couleur (sièges)."
   def seat_color(index), do: Enum.at(@players, index)
 
+  @doc """
+  Les couleurs dans l'ordre des sièges.
+
+  Le siège 0 joue en premier : c'est ce que le navigateur affiche pour laisser
+  chaque joueur choisir son camp avant le début de la partie.
+  """
+  def seat_colors, do: @players
+
   @doc "L'anneau complet (56 cases)."
   def ring, do: @ring
 
@@ -249,6 +257,7 @@ defmodule Ludo.Board do
       center_entries: Map.new(@center_entries, fn {p, {x, y}} -> {p, [x, y]} end),
       safe_indexes: @safe_indexes,
       players: @players,
+      seat_colors: @players,
       colors: @colors
     }
   end
