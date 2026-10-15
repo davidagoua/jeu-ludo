@@ -54,8 +54,8 @@ son contenu.
 Le dé est un vrai cube qui roule avant de s'arrêter sur la valeur tirée, et il
 **garde ce numéro affiché jusqu'au lancer suivant** : le serveur remet le dé à
 zéro dès que le pion a bougé, mais les autres joueurs doivent pouvoir lire ce qui
-a été joué. Un liseré de la couleur du joueur indique à qui appartient le numéro
-affiché.
+a été joué. Le dé porte par ailleurs un liseré à la couleur du joueur **dont c'est
+le tour**, pour qu'on voie d'un coup d'œil à qui c'est de jouer.
 
 Le dé du panneau latéral suit le même état : il reste présent comme repère et
 comme commande accessible au clavier et aux lecteurs d'écran.
@@ -177,7 +177,7 @@ node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
-node scripts/geometry_check.mjs /tmp/geometry.json   # 37 vérifications : panneau, dé, bannière
+node scripts/geometry_check.mjs /tmp/geometry.json   # 41 vérifications : panneau, dé, bannière
 node scripts/three_check.mjs /tmp/geometry.json      # 58 vérifications : scène, cadrage, dé
 
 # aperçu du plateau hors navigateur (voir l'en-tête de scripts/dump_board_top.mjs)

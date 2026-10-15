@@ -381,7 +381,7 @@
       dice.disabled = true;
       dice.classList.remove("ready");
       hint.textContent = "La partie démarre dès que tous les sièges sont pris.";
-      showDice(null);
+      showDice(null, null, null);
       return;
     }
 
@@ -393,13 +393,10 @@
       dice.disabled = true;
       dice.classList.remove("ready");
       hint.textContent = winner ? winner.name + " remporte la partie." : "";
-      const dernier = lastRoll.color
-        ? state.players.find((p) => p.color === lastRoll.color)
-        : null;
       showDice(
         state.dice !== null ? state.dice : lastRoll.value,
-        lastRoll.color,
-        dernier && dernier.name
+        null, // plus de tour en cours : pas de liseré
+        rollerName(state)
       );
       return;
     }
@@ -418,10 +415,7 @@
     // Pendant que le joueur lance son propre dé, c'est l'animation qui pilote la
     // face affichée : on ne l'écrase pas avec l'état du serveur.
     if (!spinTimer) {
-      const roller = lastRoll.color
-        ? state.players.find((p) => p.color === lastRoll.color)
-        : null;
-      showDice(lastRoll.value, lastRoll.color, roller && roller.name);
+      showDice(lastRoll.value, state.turn_color, rollerName(state));
     }
 
     // Le dé est le bouton : actif seulement quand c'est à nous et qu'il n'a pas
@@ -441,13 +435,22 @@
     }
   }
 
+  /** Nom du joueur qui a lancé le numéro affiché. */
+  function rollerName(state) {
+    if (!lastRoll.color || !state) return null;
+    const roller = state.players.find((p) => p.color === lastRoll.color);
+    return roller && roller.name;
+  }
+
   /**
-   * Affiche une face du dé du panneau, en indiquant à qui elle appartient.
+   * Affiche une face du dé du panneau, avec le liseré du joueur dont c'est le
+   * tour.
    *
-   * La couleur du liseré dit qui a joué ce numéro : sans elle, on ne saurait pas
-   * si le dé montre mon lancer ou celui de l'adversaire.
+   * Le numéro affiché reste celui du dernier lancer — les autres joueurs doivent
+   * pouvoir le lire — mais la couleur, elle, suit la main en cours : c'est elle
+   * qui dit à qui c'est de jouer.
    */
-  function showDice(value, color, ownerName) {
+  function showDice(value, turnColor, rollerNameValue) {
     if (spinTimer) return;
 
     const dice = $("#dice");
@@ -459,11 +462,11 @@
 
     renderDiceFace(value);
 
-    if (color && geometry && geometry.colors[color]) {
-      dice.style.setProperty("--roller", geometry.colors[color]);
-      dice.classList.add("owned");
+    if (turnColor && geometry && geometry.colors[turnColor]) {
+      dice.style.setProperty("--turn-color", geometry.colors[turnColor]);
+      dice.classList.add("current");
     } else {
-      dice.classList.remove("owned");
+      dice.classList.remove("current");
     }
 
     // les lecteurs d'écran doivent aussi savoir à qui appartient ce numéro
@@ -471,7 +474,7 @@
       "aria-label",
       value === null
         ? "dé non lancé"
-        : "dé : " + value + (ownerName ? ", lancé par " + ownerName : "")
+        : "dé : " + value + (rollerNameValue ? ", lancé par " + rollerNameValue : "")
     );
 
     if (value !== null && changed) {

@@ -330,11 +330,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   box-shadow: inset 0 -1px 1px rgb(255 255 255 / 35%);
 }
 
-/* Le liseré reprend la couleur du joueur qui a lancé : le dé reste affiché
-   après le coup, et on sait ainsi à qui appartient le numéro. */
-.dice.owned {
-  border-color: var(--roller, #9fb0c4);
-  outline: 2px solid var(--roller, transparent);
+/* Le liseré reprend la couleur du joueur dont c'est le tour : le dé garde le
+   numéro du dernier lancer, mais c'est la main en cours qu'il faut voir. */
+.dice.current {
+  border-color: var(--turn-color, #9fb0c4);
+  outline: 2px solid var(--turn-color, transparent);
   outline-offset: 2px;
 }
 
