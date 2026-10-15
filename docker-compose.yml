@@ -17,7 +17,7 @@ services:
     container_name: ludo
     restart: unless-stopped
 
-    ports:
+    expose:
       - "${LUDO_PORT:-4000}:4000"
 
     environment:
