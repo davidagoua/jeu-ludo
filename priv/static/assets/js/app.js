@@ -381,20 +381,24 @@
 
   // ---- position d'un pion, en unités du plateau
 
-  function tokenCell(color, index, position) {
+  /*
+   * Version pure : la géométrie est passée en argument, ce qui permet de la
+   * vérifier hors navigateur depuis scripts/geometry_check.mjs.
+   */
+  function tokenCellFor(geo, color, index, position) {
     if (position === "base") {
-      const [x, y] = geometry.bases[color][index];
+      const [x, y] = geo.bases[color][index];
       return [x + 0.5, y + 0.5];
     }
 
-    if (position < geometry.ring_size) {
-      const idx = (geometry.starts[color] + position) % geometry.ring_size;
-      const [x, y] = geometry.ring[idx];
+    if (position < geo.ring_size) {
+      const idx = (geo.starts[color] + position) % geo.ring_size;
+      const [x, y] = geo.ring[idx];
       return [x + 0.5, y + 0.5];
     }
 
-    if (position < geometry.finish) {
-      const [x, y] = geometry.home_columns[color][position - geometry.ring_size];
+    if (position < geo.finish) {
+      const [x, y] = geo.home_columns[color][position - geo.ring_size];
       return [x + 0.5, y + 0.5];
     }
 
@@ -402,6 +406,10 @@
     const offsets = [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]];
     const [ox, oy] = offsets[index] || [0, 0];
     return [fx + 0.5 + ox, fy + 0.5 + oy];
+  }
+
+  function tokenCell(color, index, position) {
+    return tokenCellFor(geometry, color, index, position);
   }
 
   // ---- rendu
@@ -668,10 +676,25 @@
     main();
   }
 
-  // exposé pour le débogage depuis la console du navigateur
+  // Surface de débogage (console du navigateur) et point d'entrée des
+  // vérifications hors navigateur : scripts/geometry_check.mjs charge ce
+  // fichier avec un DOM factice, injecte une géométrie réelle et rejoue un
+  // rendu complet, ce qui permet de tester le client sans navigateur.
   window.LudoClient = {
     state: () => lastState,
     geometry: () => geometry,
-    color: () => myColor
+    color: () => myColor,
+    __test: {
+      setGeometry: function (geo) {
+        geometry = geo;
+      },
+      setSeat: function (seat, color) {
+        mySeat = seat;
+        myColor = color;
+      },
+      tokenCellFor: tokenCellFor,
+      buildBoard: buildBoard,
+      renderState: renderState
+    }
   };
 })();

@@ -102,7 +102,13 @@ Quelques partis pris qui expliquent la structure :
 
 ```bash
 mix test                      # 139 tests : règles, IA, lobby, canaux
-node scripts/ws_smoke.mjs     # parcours réel en WebSocket contre un serveur qui tourne
+
+# serveur lancé (mix phx.server ou docker compose up)
+node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
+
+# client navigateur, sans navigateur
+mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
+node scripts/geometry_check.mjs /tmp/geometry.json   # 40 vérifications
 ```
 
 `mix test` couvre notamment la géométrie (boucle fermée, symétrie des départs,
@@ -111,8 +117,14 @@ compte exact, trois 6, victoire) et les canaux (sièges, reconnexion, refus des
 coups illégaux, diffusion de l'état).
 
 `scripts/ws_smoke.mjs` parle le protocole des canaux Phoenix en direct, sans
-navigateur : il crée une partie, connecte deux joueurs, vérifie les refus et
-joue jusqu'à un vainqueur. Il ne nécessite aucune dépendance (Node 22+).
+navigateur : il crée une partie, connecte deux joueurs, vérifie les refus, joue
+jusqu'à un vainqueur, teste la reconnexion et laisse les IA jouer seules. Ni
+l'un ni l'autre n'ont besoin de dépendance (Node 22+).
+
+`scripts/geometry_check.mjs` charge `app.js` avec un DOM factice et lui injecte
+la géométrie réelle du serveur : il vérifie que chaque position de pion tombe sur
+la bonne case, que le plateau se construit et que les quatre états se rendent
+sans exception. C'est ce qui permet de tester le client sans navigateur.
 
 ## Configuration
 
