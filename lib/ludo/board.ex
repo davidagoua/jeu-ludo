@@ -27,16 +27,16 @@ defmodule Ludo.Board do
   """
 
   @grid 15
-  @ring_size 56
+  @ring_size 52
   @home_length 5
 
   # Dernière position sur l'anneau : c'est l'entrée de la colonne d'arrivée du
   # joueur. Comme le départ se situe deux cases après cette entrée, un pion
   # parcourt 54 pas sur l'anneau avant de s'engager dans sa colonne.
-  @last_ring_position 54
+  @last_ring_position 50
 
   # Positions 55..59 : colonne d'arrivée ; position 60 : arrivée.
-  @finish 60
+  @finish 56
 
   # Ordre des sièges, dans le sens horaire du plateau.
   @players [:red, :blue, :yellow, :green]
@@ -50,7 +50,6 @@ defmodule Ludo.Board do
     {3, 6},
     {4, 6},
     {5, 6},
-    {6, 6},
     {6, 5},
     {6, 4},
     {6, 3},
@@ -64,7 +63,6 @@ defmodule Ludo.Board do
     {8, 3},
     {8, 4},
     {8, 5},
-    {8, 6},
     {9, 6},
     {10, 6},
     {11, 6},
@@ -78,7 +76,6 @@ defmodule Ludo.Board do
     {11, 8},
     {10, 8},
     {9, 8},
-    {8, 8},
     {8, 9},
     {8, 10},
     {8, 11},
@@ -92,7 +89,6 @@ defmodule Ludo.Board do
     {6, 11},
     {6, 10},
     {6, 9},
-    {6, 8},
     {5, 8},
     {4, 8},
     {3, 8},
@@ -108,7 +104,7 @@ defmodule Ludo.Board do
   # joueur : sur le plateau, sortir de la base et entrer dans sa colonne sont
   # deux cases distinctes, disposées en diagonale (par exemple (1,6) pour le
   # départ rouge et (0,7) pour l'entrée de sa colonne).
-  @starts %{red: 1, blue: 15, yellow: 29, green: 43}
+  @starts %{red: 1, blue: 14, yellow: 27, green: 40}
 
   # Colonnes d'arrivée, de l'extérieur vers le centre.
   @home_columns %{
@@ -131,7 +127,10 @@ defmodule Ludo.Board do
   # disposition, quand le plateau change d'un côté et pas de l'autre.
   @base_areas %{red: {0, 0}, blue: {9, 0}, yellow: {9, 9}, green: {0, 9}}
 
-  @center [{7, 6}, {6, 7}, {8, 7}, {7, 8}, {7, 7}]
+  # Le carré central : 9 cases, qu'aucun pion ne traverse. Les quatre coins
+  # étaient autrefois dans l'anneau, ce qui faisait 4 cases jouables de trop
+  # dans le centre.
+  @center for(x <- 6..8, y <- 6..8, do: {x, y})
 
   # Case du centre par laquelle chaque joueur entre : elle détermine le triangle
   # de sa couleur dans la zone d'arrivée.
@@ -139,7 +138,7 @@ defmodule Ludo.Board do
 
   # Cases sûres : les 4 cases de départ et les 4 cases « étoile » situées 9 cases
   # après chaque départ. Aucune capture n'y a lieu.
-  @safe_indexes [1, 10, 15, 24, 29, 38, 43, 52]
+  @safe_indexes [1, 10, 14, 23, 27, 36, 40, 49]
 
   @colors %{
     red: "#e5484d",

@@ -90,11 +90,15 @@ partir de `Ludo.Board.geometry/0` — voir `scripts/dump_board_top.mjs`.*
 | jaune | bas-droite | bras droit | `(13,8)` |
 | vert | bas-gauche | bras bas | `(6,13)` |
 
-L'anneau compte 56 cases. La case de départ se situe **deux** cases après
-l'entrée de la colonne d'arrivée du même joueur : sortir de sa base et rentrer
-chez soi sont deux cases distinctes, en diagonale — c'est la disposition du
-plateau classique. Un pion parcourt donc 54 cases d'anneau, puis 5 cases de
-colonne, avant l'arrivée.
+L'anneau compte **52 cases** : c'est un parcours continu qui contourne le carré
+central, dont les quatre coins ne sont pas jouables. Chaque colonne d'arrivée
+compte 5 cases, plus l'arrivée au centre, soit **6 cases jouables** — la
+disposition du plateau classique.
+
+La case de départ se situe **deux** cases après l'entrée de la colonne d'arrivée
+du même joueur : sortir de sa base et rentrer chez soi sont deux cases distinctes,
+en diagonale. Un pion parcourt donc 51 cases d'anneau, puis 5 cases de colonne,
+avant l'arrivée (57 pas en tout).
 
 Les huit **cases sûres** sont les quatre départs (cases colorées, étoile
 blanche) et les quatre cases étoile situées 9 cases plus loin (étoile grise).
@@ -122,7 +126,7 @@ une partie ne reste jamais figée.
 
 ```
 lib/ludo/
-  board.ex        géométrie du plateau (anneau de 56 cases, colonnes, bases)
+  board.ex        géométrie du plateau (anneau de 52 cases, colonnes, bases)
   game.ex         état et règles — module pur, entièrement testable
   bot.ex          IA : évalue chaque coup légal, puis tire parmi les meilleurs
   lobby.ex        registre des parties, génération des codes de salon
@@ -182,7 +186,7 @@ de frappe ne se verrait sinon qu'à l'exécution, chez l'utilisateur.
 ## Tests
 
 ```bash
-mix test                      # 156 tests : règles, IA, lobby, canaux, pages
+mix test                      # 167 tests : règles, IA, lobby, canaux, pages
 
 # serveur lancé (mix phx.server ou docker compose up)
 node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel

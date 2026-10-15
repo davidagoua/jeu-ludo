@@ -575,7 +575,7 @@ defmodule Ludo.GameTest do
       assert length(decoded["players"]) == 4
 
       red = Enum.find(decoded["players"], &(&1["color"] == "red"))
-      assert red["tokens"] == [0, 5, "base", 60]
+      assert red["tokens"] == [0, 5, "base", finish()]
       assert red["finished"] == 1
       assert red["kind"] == "human"
       assert is_binary(red["name"])

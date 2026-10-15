@@ -63,14 +63,14 @@ defmodule LudoWeb.GameChannelTest do
 
       # la réponse de `join` n'est pas sérialisée : les clés restent des atomes
       geo = reply.geometry
-      assert geo.ring_size == 56
-      assert geo.last_ring_position == 54
-      assert geo.finish == 60
-      assert length(geo.ring) == 56
+      assert geo.ring_size == 52
+      assert geo.last_ring_position == 50
+      assert geo.finish == 56
+      assert length(geo.ring) == 52
       assert length(geo.home_columns[:red]) == 5
       assert length(geo.bases[:blue]) == 4
-      assert length(geo.center) == 5
-      assert geo.safe_indexes == [1, 10, 15, 24, 29, 38, 43, 52]
+      assert length(geo.center) == 9
+      assert geo.safe_indexes == [1, 10, 14, 23, 27, 36, 40, 49]
       # le départ rouge se situe deux cases après l'entrée de sa colonne
       assert geo.starts[:red] == 1
       assert geo.colors[:red] =~ "#"
@@ -86,9 +86,9 @@ defmodule LudoWeb.GameChannelTest do
       # après passage en JSON, les clés deviennent des chaînes : c'est ce que
       # verra le navigateur.
       assert decoded["starts"]["red"] == 1
-      assert decoded["last_ring_position"] == 54
-      assert decoded["finish"] == 60
-      assert length(decoded["ring"]) == 56
+      assert decoded["last_ring_position"] == 50
+      assert decoded["finish"] == 56
+      assert length(decoded["ring"]) == 52
     end
 
     test "les joueurs suivants prennent les sièges dans l'ordre" do

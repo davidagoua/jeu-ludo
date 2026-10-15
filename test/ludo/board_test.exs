@@ -5,29 +5,44 @@ defmodule Ludo.BoardTest do
 
   defp adjacent?({x1, y1}, {x2, y2}), do: abs(x1 - x2) + abs(y1 - y2) == 1
 
+  # Les quatre coins du carré central ne sont pas jouables : le chemin les
+  # contourne, ce qui donne un pas en diagonale dont le coin est le sommet
+  # commun aux deux cases.
+  @coins_du_centre [{6, 6}, {8, 6}, {8, 8}, {6, 8}]
+
+  defp tourne_autour?({x1, y1}, {x2, y2}, coins \\ @coins_du_centre) do
+    abs(x1 - x2) == 1 and abs(y1 - y2) == 1 and ({x2, y1} in coins or {x1, y2} in coins)
+  end
+
   # Rotation d'un quart de tour dans le sens horaire autour du centre du
   # plateau (7,5 ; 7,5) : le plateau doit être invariant par cette rotation.
   defp rotate({x, y}), do: {14 - y, x}
 
   describe "anneau" do
-    test "contient exactement 56 cases distinctes" do
+    test "contient exactement 52 cases distinctes" do
       ring = Board.ring()
-      assert length(ring) == 56
+      assert length(ring) == 52
       assert ring == Enum.uniq(ring)
-      assert Board.ring_size() == 56
+      assert Board.ring_size() == 52
     end
 
-    test "est une boucle fermée de cases orthogonales adjacentes" do
+    test "est une boucle fermée, qui tourne au coin du carré central" do
       ring = Board.ring()
 
-      ring
+      (ring ++ [hd(ring)])
       |> Enum.chunk_every(2, 1, :discard)
       |> Enum.each(fn [a, b] ->
-        assert adjacent?(a, b), "#{inspect(a)} et #{inspect(b)} ne sont pas adjacentes"
+        assert adjacent?(a, b) or tourne_autour?(a, b),
+               "#{inspect(a)} -> #{inspect(b)} n'est pas un pas valide"
       end)
 
-      assert adjacent?(List.last(ring), List.first(ring)),
-             "la boucle n'est pas fermée entre la dernière et la première case"
+      # quatre virages en diagonale, un par coin du carré central
+      virages =
+        (ring ++ [hd(ring)])
+        |> Enum.chunk_every(2, 1, :discard)
+        |> Enum.count(fn [a, b] -> tourne_autour?(a, b) end)
+
+      assert virages == 4, "le chemin devrait tourner 4 fois, pas #{virages}"
     end
 
     test "toutes les cases sont dans la grille 15x15" do
@@ -93,18 +108,20 @@ defmodule Ludo.BoardTest do
   end
 
   describe "départs" do
-    test "les quatre départs sont régulièrement espacés de 14 cases" do
+    test "les quatre départs sont régulièrement espacés de 13 cases" do
       starts = Board.players() |> Enum.map(&Board.start_index/1)
-      assert starts == [1, 15, 29, 43]
+      assert starts == [1, 14, 27, 40]
       assert Enum.uniq(starts) == starts
 
       # écart constant de 14 entre joueurs successifs, en boucle
       gaps =
         starts
         |> Enum.with_index()
-        |> Enum.map(fn {v, i} -> rem(Enum.at(starts, rem(i + 1, 4)) - v + 56, 56) end)
+        |> Enum.map(fn {v, i} ->
+          rem(Enum.at(starts, rem(i + 1, 4)) - v + Board.ring_size(), Board.ring_size())
+        end)
 
-      assert gaps == [14, 14, 14, 14]
+      assert gaps == [13, 13, 13, 13]
     end
 
     test "le départ se situe deux cases après l'entrée de la colonne" do
@@ -112,15 +129,15 @@ defmodule Ludo.BoardTest do
 
       for player <- Board.players() do
         start_index = Board.start_index(player)
-        entrance_index = rem(start_index - 2 + 56, 56)
+        entrance_index = rem(start_index - 2 + Board.ring_size(), Board.ring_size())
 
         assert Enum.at(ring, start_index) != Enum.at(ring, entrance_index)
 
         # deux pas en avant depuis l'entrée mènent bien au départ
-        assert rem(entrance_index + 2, 56) == start_index
+        assert rem(entrance_index + 2, Board.ring_size()) == start_index
 
         # et le départ suit immédiatement la case voisine de l'entrée
-        neighbor = rem(start_index - 1 + 56, 56)
+        neighbor = rem(start_index - 1 + Board.ring_size(), Board.ring_size())
         assert adjacent?(Enum.at(ring, neighbor), Enum.at(ring, start_index))
       end
     end
@@ -213,21 +230,23 @@ defmodule Ludo.BoardTest do
       assert Enum.all?(safe, &(&1 in 0..55))
     end
 
-    test "alternent des écarts de 9 et 5 et sont régulières" do
+    test "alternent des écarts de 9 et 4 et sont régulières" do
       safe = Board.safe_indexes()
-      assert safe == [1, 10, 15, 24, 29, 38, 43, 52]
+      assert safe == [1, 10, 14, 23, 27, 36, 40, 49]
 
       gaps =
         safe
         |> Enum.with_index()
-        |> Enum.map(fn {v, i} -> rem(Enum.at(safe, rem(i + 1, 8)) - v + 56, 56) end)
+        |> Enum.map(fn {v, i} ->
+          rem(Enum.at(safe, rem(i + 1, 8)) - v + Board.ring_size(), Board.ring_size())
+        end)
 
-      assert gaps == [9, 5, 9, 5, 9, 5, 9, 5]
+      assert gaps == [9, 4, 9, 4, 9, 4, 9, 4]
     end
 
     test "les étoiles sont 9 cases après chaque départ" do
       for player <- Board.players() do
-        star = rem(Board.start_index(player) + 9, 56)
+        star = rem(Board.start_index(player) + 9, Board.ring_size())
         assert Board.safe_index?(star)
       end
     end
@@ -245,58 +264,60 @@ defmodule Ludo.BoardTest do
       end
     end
 
-    test "la position 54 est l'entrée de la colonne du joueur" do
+    test "la dernière position d'anneau est l'entrée de la colonne" do
       for player <- Board.players() do
-        assert Board.cell(player, 54) == entrance_cell(player)
+        assert Board.cell(player, Board.last_ring_position()) == entrance_cell(player)
       end
     end
 
-    test "les positions 55 à 59 sont la colonne d'arrivée" do
+    test "les positions suivantes sont la colonne d'arrivée" do
       for player <- Board.players() do
         column = Board.home_column(player)
 
         for k <- 0..4 do
-          assert Board.cell(player, 55 + k) == Enum.at(column, k)
+          assert Board.cell(player, Board.last_ring_position() + 1 + k) == Enum.at(column, k)
         end
       end
     end
 
-    test "la position 60 est l'arrivée" do
+    test "la position d'arrivée termine le parcours" do
       for player <- Board.players() do
-        assert Board.cell(player, 60) == :finished
+        assert Board.cell(player, Board.finish()) == :finished
       end
     end
 
     test "le parcours complet est une suite continue de cases distinctes" do
       for player <- Board.players() do
-        cells = for p <- 0..59, do: Board.cell(player, p)
+        cells = for p <- 0..(Board.finish() - 1), do: Board.cell(player, p)
 
         cells
         |> Enum.chunk_every(2, 1, :discard)
         |> Enum.each(fn [a, b] ->
-          assert adjacent?(a, b), "#{player}: parcours discontinu #{inspect(a)} -> #{inspect(b)}"
+          assert adjacent?(a, b) or tourne_autour?(a, b),
+                 "#{player}: parcours discontinu #{inspect(a)} -> #{inspect(b)}"
         end)
 
-        assert length(cells) == 60
-        assert length(Enum.uniq(cells)) == 60, "#{player}: cases du parcours non distinctes"
+        assert length(cells) == Board.finish()
+
+        assert length(Enum.uniq(cells)) == Board.finish(),
+               "#{player}: cases du parcours non distinctes"
       end
     end
 
     test "ring_index ne renvoie un index que sur l'anneau" do
       for player <- Board.players() do
         assert Board.ring_index(player, 0) == Board.start_index(player)
-        assert Board.ring_index(player, 54) == entrance_index(player)
-        assert Board.ring_index(player, 55) == nil
-        assert Board.ring_index(player, 60) == nil
+        assert Board.ring_index(player, Board.last_ring_position()) == entrance_index(player)
+        assert Board.ring_index(player, Board.last_ring_position() + 1) == nil
+        assert Board.ring_index(player, Board.finish()) == nil
         assert Board.ring_index(player, :base) == nil
       end
     end
 
     test "un pion fait le tour complet avant d'entrer dans sa colonne" do
-      # 54 pas sur l'anneau, soit 2 cases de moins que l'anneau entier : le pion
-      # revient juste avant son départ, ce qui est la disposition classique.
-      assert Board.last_ring_position() == 54
-      assert Board.ring_size() - Board.last_ring_position() == 2
+      # Il parcourt l'anneau entier sauf la case juste avant son départ, et
+      # l'entrée de sa colonne est sa dernière case d'anneau.
+      assert Board.last_ring_position() == Board.ring_size() - 2
     end
   end
 
@@ -306,27 +327,29 @@ defmodule Ludo.BoardTest do
       assert {:ok, json} = Jason.encode(geo)
       decoded = Jason.decode!(json)
 
-      assert decoded["ring_size"] == 56
-      assert decoded["last_ring_position"] == 54
-      assert decoded["finish"] == 60
-      assert length(decoded["ring"]) == 56
+      assert decoded["ring_size"] == 52
+      assert decoded["last_ring_position"] == 50
+      assert decoded["finish"] == 56
+      assert length(decoded["ring"]) == 52
       assert decoded["starts"]["red"] == 1
-      assert decoded["starts"]["blue"] == 15
-      assert decoded["starts"]["yellow"] == 29
-      assert decoded["starts"]["green"] == 43
+      assert decoded["starts"]["blue"] == 14
+      assert decoded["starts"]["yellow"] == 27
+      assert decoded["starts"]["green"] == 40
       assert length(decoded["home_columns"]["blue"]) == 5
       assert length(decoded["bases"]["yellow"]) == 4
-      assert length(decoded["center"]) == 5
-      assert decoded["safe_indexes"] == [1, 10, 15, 24, 29, 38, 43, 52]
+      assert length(decoded["center"]) == 9
+      assert decoded["safe_indexes"] == [1, 10, 14, 23, 27, 36, 40, 49]
       assert decoded["players"] == ["red", "blue", "yellow", "green"]
     end
 
     test "la liste des cases JSON est bien [x, y]" do
       decoded = Board.geometry() |> Jason.encode!() |> Jason.decode!()
+      dernier = Board.ring_size() - 1
+
       assert Enum.at(decoded["ring"], 0) == [0, 6]
       assert Enum.at(decoded["ring"], 1) == [1, 6]
-      assert Enum.at(decoded["ring"], 13) == [7, 0]
-      assert Enum.at(decoded["ring"], 55) == [0, 7]
+      assert Enum.at(decoded["ring"], 12) == [7, 0]
+      assert Enum.at(decoded["ring"], dernier) == [0, 7]
     end
 
     test "expose la position des bases, pour que le client n'en ait aucune en dur" do
@@ -362,7 +385,9 @@ defmodule Ludo.BoardTest do
 
   defp rotated(player, fun), do: player |> fun.() |> Enum.map(&rotate/1) |> Enum.sort()
 
-  defp entrance_index(player), do: rem(Board.start_index(player) - 2 + 56, 56)
+  defp entrance_index(player) do
+    rem(Board.start_index(player) - 2 + Board.ring_size(), Board.ring_size())
+  end
 
   defp entrance_cell(player), do: Enum.at(Board.ring(), entrance_index(player))
 

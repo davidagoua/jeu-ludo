@@ -317,8 +317,22 @@ check(
   Boolean(root && tokensGroup && diceByColor)
 );
 
-// 56 cases d'anneau + 4 colonnes de 5 cases
-check("les 76 cases sont construites", of("cell").length === 76, of("cell").length);
+// L'anneau plus les quatre colonnes d'arrivée. Le carré central n'a aucune
+// case jouable : c'est le plateau classique.
+const casesAttendues =
+  geo.ring.length + geo.home_columns[geo.players[0]].length * geo.players.length;
+
+check(
+  "l'anneau et les colonnes sont construits (" + casesAttendues + " cases)",
+  of("cell").length === casesAttendues,
+  of("cell").length
+);
+
+// et aucune case n'est dessinée dans le carré central
+const casesAuCentre = of("cell").filter(
+  (o) => o.userData.cell[0] >= 6 && o.userData.cell[0] <= 8 && o.userData.cell[1] >= 6 && o.userData.cell[1] <= 8
+);
+check("aucune case jouable dans le carré central", casesAuCentre.length === 0, casesAuCentre.length);
 check("les 8 étoiles sont construites", of("star").length === 8, of("star").length);
 check("les 4 bases sont construites", of("base").length === 4, of("base").length);
 check("les 16 emplacements de base sont construits", of("slot").length === 16, of("slot").length);

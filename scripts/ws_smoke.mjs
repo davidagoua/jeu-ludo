@@ -208,7 +208,10 @@ async function main() {
   const aliceJoin = await alice.join();
 
   check("l'hôte récupère le siège rouge", aliceJoin.seat.color === "red", aliceJoin.seat);
-  check("la géométrie du plateau est fournie", aliceJoin.geometry.ring.length === 56);
+  check(
+    "la géométrie du plateau est fournie",
+    aliceJoin.geometry.ring.length === 52 && aliceJoin.geometry.finish === 56
+  );
   check("l'état initial attend des joueurs", aliceJoin.state.status === "waiting");
 
   const bob = new ChannelClient("game:" + code, { name: "Bob", player_id: playerId("bob") });
