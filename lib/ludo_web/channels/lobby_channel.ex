@@ -34,7 +34,8 @@ defmodule LudoWeb.LobbyChannel do
   @impl true
   def handle_in("create", payload, socket) do
     with %{"name" => name, "mode" => mode, "player_id" => player_id} <- payload do
-      case Lobby.create_game(mode, name, player_id) do
+      # `bots` est facultatif : il ne concerne que le mode contre l'IA.
+      case Lobby.create_game(mode, name, player_id, payload["bots"]) do
         {:ok, code} -> {:reply, {:ok, %{code: code}}, socket}
         {:error, reason} -> {:reply, {:error, error(reason)}, socket}
       end

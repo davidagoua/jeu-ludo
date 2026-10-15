@@ -25,13 +25,34 @@
         <legend>Mode de jeu</legend>
 
         <label :for={mode <- @modes} class="mode">
-          <input type="radio" name="mode" value={mode.key} checked={mode.key == "vs_ai"} />
+          <input
+            type="radio"
+            name="mode"
+            value={mode.key}
+            checked={mode.key == "vs_ai"}
+            data-bot-choices={Enum.join(Map.get(mode, :bot_choices, []), ",")}
+          />
           <span class="mode-body">
             <span class="mode-label">{mode.label}</span>
             <span class="mode-hint">{mode.hint}</span>
           </span>
         </label>
       </fieldset>
+
+      <%!-- Nombre d'adversaires, pour les modes qui en prévoient — n'apparaît
+           que si le mode sélectionné propose des IA. --%>
+      <div class="bots" id="bots" hidden>
+        <span class="bots-label">Nombre d'IA</span>
+
+        <div class="bots-row" id="bots-row">
+          <label :for={n <- 1..3} class="bot-choice">
+            <input type="radio" name="bots" value={n} checked={n == 3} />
+            <span>{n}</span>
+          </label>
+        </div>
+
+        <p class="hint" id="bots-hint">1 joueur + 3 IA</p>
+      </div>
 
       <button id="create" class="primary" type="button">Créer la partie</button>
     </section>

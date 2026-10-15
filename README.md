@@ -3,7 +3,7 @@
 Jeu de Ludo multijoueur en ligne, écrit en **Elixir / Phoenix** et livré dans une
 **image Docker**. Pas de compte à créer : on choisit un pseudo et on joue.
 
-* **Modes** : solo contre l'IA, 2, 3 ou 4 joueurs
+* **Modes** : solo contre l'IA (1 à 3 adversaires au choix), 2, 3 ou 4 joueurs
 * **Temps réel** : WebSockets (canaux Phoenix), aucun rechargement de page
 * **Aucune base de données** : les parties vivent en mémoire
 * **Aucune dépendance front** : ni npm, ni esbuild, ni Tailwind — le client
@@ -37,8 +37,9 @@ Testé avec Elixir 1.19.3 / OTP 28 et Phoenix 1.8.
 
 ## Comment on joue
 
-1. Sur l'accueil, saisissez un **pseudo**, choisissez un **mode** et cliquez sur
-   *Créer la partie*.
+1. Sur l'accueil, saisissez un **pseudo**, choisissez un **mode**, puis cliquez
+   sur *Créer la partie*. En mode contre l'IA, un sélecteur apparaît pour choisir
+   le **nombre d'adversaires** (1 à 3, soit 2 à 4 camps).
 2. Partagez le **code du salon** (4 caractères) ou le lien de la page : les
    autres joueurs rejoignent avec ce code, ou via *Rejoindre une partie ouverte*.
 3. **Choisissez votre camp** : en attendant les autres joueurs, un sélecteur
@@ -193,7 +194,7 @@ de frappe ne se verrait sinon qu'à l'exécution, chez l'utilisateur.
 ## Tests
 
 ```bash
-mix test                      # 167 tests : règles, IA, lobby, canaux, pages
+mix test                      # 179 tests : règles, IA, lobby, canaux, pages
 
 # serveur lancé (mix phx.server ou docker compose up)
 node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel

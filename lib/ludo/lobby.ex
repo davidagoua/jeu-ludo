@@ -39,10 +39,13 @@ defmodule Ludo.Lobby do
   @doc """
   Crée une partie et y installe l'hôte.
 
+  `bots` est facultatif : il permet de choisir le nombre d'adversaires d'un mode
+  qui en prévoit (l'IA), ce qui fixe du même coup le nombre de sièges.
+
   Renvoie `{:ok, code}` ou `{:error, raison}`.
   """
-  def create_game(mode, name, player_id) do
-    GenServer.call(__MODULE__, {:create_game, mode, name, player_id})
+  def create_game(mode, name, player_id, bots \\ nil) do
+    GenServer.call(__MODULE__, {:create_game, mode, name, player_id, bots})
   end
 
   @doc "Liste des parties rejoignables, pour la page d'accueil."
@@ -96,13 +99,13 @@ defmodule Ludo.Lobby do
   end
 
   @impl true
-  def handle_call({:create_game, mode, name, player_id}, _from, state) do
+  def handle_call({:create_game, mode, name, player_id, bots}, _from, state) do
     with {:ok, mode} <- Game.parse_mode(mode),
          {:ok, name} <- validate_name(name),
          {:ok, player_id} <- validate_player_id(player_id) do
       code = unique_code(state.games)
 
-      case start_game_server(code, mode, name, player_id) do
+      case start_game_server(code, mode, name, player_id, bots) do
         {:ok, pid, game} ->
           ref = Process.monitor(pid)
           meta = build_meta(code, pid, game)
@@ -206,8 +209,8 @@ defmodule Ludo.Lobby do
   # Interne
   # ---------------------------------------------------------------------------
 
-  defp start_game_server(code, mode, name, player_id) do
-    opts = [code: code, mode: mode, host_name: name, host_id: player_id]
+  defp start_game_server(code, mode, name, player_id, bots) do
+    opts = [code: code, mode: mode, host_name: name, host_id: player_id, bots: bots]
 
     case DynamicSupervisor.start_child(Ludo.GameSupervisor, {GameServer, opts}) do
       {:ok, pid} ->

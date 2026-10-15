@@ -25,6 +25,59 @@ defmodule LudoWeb.LobbyChannelTest do
     end
   end
 
+  describe "choix du nombre d'IA" do
+    test "le nombre d'adversaires demandé est respecté" do
+      socket = join_lobby()
+
+      for {bots, seats} <- [{1, 2}, {2, 3}, {3, 4}] do
+        ref =
+          push(socket, "create", %{
+            name: "Alice",
+            mode: "vs_ai",
+            bots: bots,
+            player_id: id()
+          })
+
+        assert_reply ref, :ok, %{code: code}
+        {:ok, state} = Ludo.GameServer.public_state(code)
+
+        assert state.seats == seats, "#{bots} IA devraient donner #{seats} camps"
+        assert Enum.count(state.players, &(&1.kind == "bot")) == bots
+        # tous les sièges sont pris : la partie démarre aussitôt
+        assert state.status == "playing"
+      end
+    end
+
+    test "sans nombre d'IA, le mode garde sa valeur par défaut" do
+      socket = join_lobby()
+      ref = push(socket, "create", %{name: "Alice", mode: "vs_ai", player_id: id()})
+      assert_reply ref, :ok, %{code: code}
+
+      {:ok, state} = Ludo.GameServer.public_state(code)
+      assert state.seats == 4
+      assert Enum.count(state.players, &(&1.kind == "bot")) == 3
+    end
+
+    test "un mode sans IA ignore le nombre demandé" do
+      socket = join_lobby()
+
+      ref =
+        push(socket, "create", %{
+          name: "Alice",
+          mode: "p4",
+          bots: 2,
+          player_id: id()
+        })
+
+      assert_reply ref, :ok, %{code: code}
+      {:ok, state} = Ludo.GameServer.public_state(code)
+
+      assert state.seats == 4
+      assert Enum.count(state.players, &(&1.kind == "bot")) == 0
+      assert state.status == "waiting"
+    end
+  end
+
   describe "création" do
     test "crée une partie et renvoie son code" do
       socket = join_lobby()

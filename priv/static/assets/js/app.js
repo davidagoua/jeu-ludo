@@ -116,15 +116,49 @@
       .receive("ok", () => {})
       .receive("error", () => toast("Le salon d'accueil est injoignable."));
 
+    // Nombre d'IA : le sélecteur n'apparaît que pour un mode qui en prévoit, et
+    // le texte récapitule la partie (le joueur et ses adversaires).
+    const botsBox = $("#bots");
+    const botsHint = $("#bots-hint");
+
+    function syncBots() {
+      const modeInput = $('input[name="mode"]:checked');
+      const choix = ((modeInput && modeInput.dataset.botChoices) || "")
+        .split(",")
+        .filter(Boolean);
+
+      botsBox.hidden = choix.length === 0;
+      if (botsBox.hidden) return;
+
+      const choisi = Number(($('input[name="bots"]:checked') || {}).value || choix[choix.length - 1]);
+      botsHint.textContent =
+        "1 joueur + " + choisi + " IA · " + (choisi + 1) + " camps";
+    }
+
+    for (const radio of document.querySelectorAll('input[name="mode"]')) {
+      radio.addEventListener("change", syncBots);
+    }
+
+    for (const radio of document.querySelectorAll('input[name="bots"]')) {
+      radio.addEventListener("change", syncBots);
+    }
+
+    syncBots();
+
     $("#create").addEventListener("click", () => {
       const name = pseudo.value.trim();
       if (!name) return toast("Choisissez d'abord un pseudo.");
       setName(name);
 
       const mode = ($('input[name="mode"]:checked') || {}).value || "vs_ai";
-      push(lobby, "create", { name: name, mode: mode, player_id: playerId }, (reply) =>
-        goToGame(reply.code)
-      );
+      const payload = { name: name, mode: mode, player_id: playerId };
+
+      // on n'envoie le nombre d'IA que s'il a un sens pour ce mode
+      if (!botsBox.hidden) {
+        payload.bots = Number(($('input[name="bots"]:checked') || {}).value || 3);
+      }
+
+      push(lobby, "create", payload, (reply) => goToGame(reply.code));
     });
 
     $("#join").addEventListener("click", () => {

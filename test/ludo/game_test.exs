@@ -470,6 +470,74 @@ defmodule Ludo.GameTest do
     end
   end
 
+  # --- nombre d'IA ----------------------------------------------------------
+
+  describe "nombre d'IA en mode solo" do
+    test "un seul adversaire donne une partie à deux camps" do
+      game = Game.new("T", :vs_ai, "Alice", "a", bots: 1)
+
+      assert game.seats == 2
+      assert length(game.players) == 2
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 1
+      # tous les sièges sont pris : la partie démarre aussitôt
+      assert game.status == :playing
+    end
+
+    test "deux et trois adversaires" do
+      game = Game.new("T", :vs_ai, "Alice", "a", bots: 2)
+      assert game.seats == 3
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 2
+      assert game.status == :playing
+
+      game = Game.new("T", :vs_ai, "Alice", "a", bots: 3)
+      assert game.seats == 4
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 3
+      assert game.status == :playing
+    end
+
+    test "sans choix, le mode garde son nombre d'IA par défaut" do
+      game = Game.new("T", :vs_ai, "Alice", "a")
+      assert game.seats == 4
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 3
+    end
+
+    test "un nombre aberrants est ramené dans les bornes" do
+      game = Game.new("T", :vs_ai, "Alice", "a", bots: 0)
+      assert game.seats == 2
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 1
+
+      game = Game.new("T", :vs_ai, "Alice", "a", bots: 99)
+      assert game.seats == 4
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 3
+    end
+
+    test "un mode sans IA ignore le nombre demandé" do
+      game = Game.new("T", :p4, "Alice", "a", bots: 2)
+
+      assert game.seats == 4
+      assert Enum.count(game.players, &(&1.kind == :bot)) == 0
+      assert game.status == :waiting
+    end
+
+    test "les choix proposés sont cohérents avec le mode" do
+      assert Game.bot_choices(:vs_ai) == [1, 2, 3]
+      assert Game.bot_choices(:p4) == []
+
+      assert Enum.all?(
+               Game.bot_choices(:vs_ai),
+               &(Game.seats_and_bots(:vs_ai, &1) == {&1 + 1, &1})
+             )
+    end
+
+    test "la liste des modes expose les choix pour le formulaire" do
+      solo = Enum.find(Game.modes_list(), &(&1.key == "vs_ai"))
+      assert solo.bot_choices == [1, 2, 3]
+
+      humain = Enum.find(Game.modes_list(), &(&1.key == "p4"))
+      assert humain.bot_choices == []
+    end
+  end
+
   # --- choix du camp --------------------------------------------------------
 
   describe "choix du camp" do

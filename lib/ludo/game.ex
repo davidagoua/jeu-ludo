@@ -36,7 +36,13 @@ defmodule Ludo.Game do
   @type position :: :base | 0..61
 
   @modes %{
-    vs_ai: %{seats: 4, bots: 3, label: "Solo contre l'IA", hint: "1 joueur + 3 IA"},
+    vs_ai: %{
+      seats: 4,
+      bots: 3,
+      label: "Solo contre l'IA",
+      hint: "1 joueur + 3 IA",
+      bot_choices: [1, 2, 3]
+    },
     p2: %{seats: 2, bots: 0, label: "2 joueurs", hint: "2 joueurs humains"},
     p3: %{seats: 3, bots: 0, label: "3 joueurs", hint: "3 joueurs humains"},
     p4: %{seats: 4, bots: 0, label: "4 joueurs", hint: "4 joueurs humains"}
@@ -52,6 +58,8 @@ defmodule Ludo.Game do
   defstruct code: nil,
             mode: :p2,
             seats: 2,
+            # nombre d'IA installées à la création, choisi par l'hôte
+            initial_bots: 0,
             status: :waiting,
             players: [],
             tokens: %{},
@@ -75,14 +83,15 @@ defmodule Ludo.Game do
   def modes_list do
     # L'ordre d'itération d'une map n'est pas garanti : on impose l'ordre
     # d'affichage à partir de @mode_order.
-    for key <- @mode_order,
-        %{seats: seats, bots: bots, label: label, hint: hint} = _mode <- [Map.fetch!(@modes, key)] do
+    for key <- @mode_order, mode <- [Map.fetch!(@modes, key)] do
       %{
         key: to_string(key),
-        seats: seats,
-        bots: bots,
-        label: label,
-        hint: hint
+        seats: mode.seats,
+        bots: mode.bots,
+        label: mode.label,
+        hint: mode.hint,
+        # vide pour les modes sans IA
+        bot_choices: Map.get(mode, :bot_choices, [])
       }
     end
   end
@@ -92,6 +101,32 @@ defmodule Ludo.Game do
 
   @doc "Nombre d'IA à installer d'emblée pour un mode."
   def bots_for(mode), do: mode |> fetch_mode() |> Map.fetch!(:bots)
+
+  @doc """
+  Nombres d'IA proposés pour un mode (vide s'il n'en prévoit pas).
+  """
+  def bot_choices(mode), do: mode |> fetch_mode() |> Map.get(:bot_choices, [])
+
+  @doc """
+  Nombre d'IA retenu, et sièges correspondants.
+
+  Un mode sans IA ignore le choix. Un mode avec IA accepte de 1 à 3 adversaires,
+  ce qui donne 2 à 4 sièges : le joueur, plus ses adversaires.
+  """
+  def seats_and_bots(mode, nil), do: {seats_for(mode), bots_for(mode)}
+
+  def seats_and_bots(mode, wanted) when is_integer(wanted) do
+    case bot_choices(mode) do
+      [] ->
+        {seats_for(mode), bots_for(mode)}
+
+      choices ->
+        bots = wanted |> max(Enum.min(choices)) |> min(Enum.max(choices))
+        {bots + 1, bots}
+    end
+  end
+
+  def seats_and_bots(mode, _autre), do: {seats_for(mode), bots_for(mode)}
 
   @doc "Libellé lisible d'un mode."
   def mode_label(mode), do: mode |> fetch_mode() |> Map.fetch!(:label)
@@ -134,13 +169,14 @@ defmodule Ludo.Game do
   @doc """
   Crée une partie en attente de joueurs. L'hôte occupe le siège 0.
   """
-  def new(code, mode, host_name, host_id) when is_binary(code) do
-    seats = seats_for(mode)
+  def new(code, mode, host_name, host_id, options \\ []) when is_binary(code) do
+    {seats, bots} = seats_and_bots(mode, options[:bots])
 
     game = %__MODULE__{
       code: code,
       mode: mode,
       seats: seats,
+      initial_bots: bots,
       status: :waiting,
       players: [],
       tokens: %{}
@@ -159,7 +195,7 @@ defmodule Ludo.Game do
   end
 
   defp add_initial_bots(game) do
-    Enum.reduce(1..max(bots_for(game.mode), 0)//1, game, fn _, acc ->
+    Enum.reduce(1..max(game.initial_bots, 0)//1, game, fn _, acc ->
       case add_bot(acc) do
         {:ok, acc} -> acc
         {:error, _} -> acc

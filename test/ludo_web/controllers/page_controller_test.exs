@@ -29,6 +29,23 @@ defmodule LudoWeb.PageControllerTest do
     end
   end
 
+  describe "GET / — choix des adversaires" do
+    test "propose de choisir le nombre d'IA", %{conn: conn} do
+      html = get(conn, ~p"/") |> html_response(200)
+
+      # un bouton par nombre d'adversaires possible
+      assert html =~ ~s(id="bots-row")
+
+      for n <- 1..3 do
+        assert html =~ ~s(value="#{n}")
+      end
+
+      # le choix n'est proposé que par les modes qui prévoient des IA
+      assert html =~ ~s(data-bot-choices="1,2,3")
+      assert html =~ "1 joueur +"
+    end
+  end
+
   describe "GET /partie/:code" do
     test "affiche le plateau d'une partie existante", %{conn: conn} do
       {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-1111")

@@ -141,7 +141,8 @@ defmodule Ludo.GameServer do
         code,
         Keyword.fetch!(opts, :mode),
         Keyword.fetch!(opts, :host_name),
-        Keyword.fetch!(opts, :host_id)
+        Keyword.fetch!(opts, :host_id),
+        bots: Keyword.get(opts, :bots)
       )
 
     state = %{game: game, bot_timer: nil, timeout_timer: nil, roll_timer: nil}

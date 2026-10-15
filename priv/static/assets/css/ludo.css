@@ -91,6 +91,38 @@ h2 { font-size: 1.05rem; letter-spacing: 0.01em; }
 }
 .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* Choix du nombre d'IA : mêmes boutons que les modes, en plus compact. */
+.bots { margin-top: 0.9rem; }
+.bots-label {
+  display: block;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 0.4rem;
+}
+.bots-row { display: flex; gap: 0.5rem; }
+.bot-choice { flex: 1; }
+.bot-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.bot-choice span {
+  display: grid;
+  place-items: center;
+  padding: 0.45rem 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.bot-choice span:hover { border-color: var(--accent); }
+.bot-choice input:checked + span {
+  border-color: var(--accent);
+  background: #16281f;
+  color: var(--text);
+}
+.bot-choice input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .modes { border: 0; padding: 0; margin: 0 0 0.9rem; }
 .modes legend { font-size: 0.85rem; color: var(--muted); padding: 0; margin-bottom: 0.4rem; }
 
