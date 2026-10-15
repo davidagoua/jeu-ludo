@@ -15,6 +15,11 @@
     </script>
     <script defer type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
+    <%!-- Three.js est lourd (747 Ko) : on ne le charge que sur le plateau. --%>
+    <%= if assigns[:load_board3d] do %>
+      <script type="module" src={~p"/assets/js/board3d.js"}>
+      </script>
+    <% end %>
   </head>
   <body>
     {@inner_content}

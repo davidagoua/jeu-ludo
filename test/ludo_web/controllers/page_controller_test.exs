@@ -35,9 +35,31 @@ defmodule LudoWeb.PageControllerTest do
       html = get(conn, ~p"/partie/#{code}") |> html_response(200)
 
       assert html =~ code
-      assert html =~ ~s(id="board")
+      assert html =~ ~s(id="board3d")
       assert html =~ ~s(data-code="#{code}")
       assert html =~ "2 joueurs"
+    end
+
+    test "charge Three.js sur le plateau, et seulement là", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-5555")
+
+      game = get(conn, ~p"/partie/#{code}") |> html_response(200)
+      assert game =~ ~s(src="/assets/js/board3d.js")
+      # le module est chargé en `module` : il importe Three.js en ESM
+      assert game =~ ~r/<script type="module"[^>]*board3d\.js/
+
+      # l'accueil n'a pas besoin de 747 Ko de moteur 3D
+      home = get(conn, ~p"/") |> html_response(200)
+      refute home =~ "board3d.js"
+      refute home =~ "three.module"
+    end
+
+    test "WebGL est annoncé si le navigateur ne peut pas l'afficher", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-aaaa-6666")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      assert html =~ ~s(id="webgl-error")
+      assert html =~ "WebGL"
     end
 
     test "le dé est un bouton, sans bouton de lancer séparé", %{conn: conn} do

@@ -43,11 +43,15 @@ Testé avec Elixir 1.19.3 / OTP 28 et Phoenix 1.8.
    autres joueurs rejoignent avec ce code, ou via *Rejoindre une partie ouverte*.
 3. La partie démarre **dès que tous les sièges sont pris**. L'hôte peut aussi
    cliquer sur *Compléter avec des IA et démarrer* pour ne pas attendre.
-4. Cliquez sur **Lancer le dé**, puis sur un pion mis en surbrillance.
+4. **Cliquez sur le dé** pour lancer, puis sur un pion en surbrillance.
 
-La **zone du joueur dont c'est le tour s'illumine** sur le plateau, et le dé est
-affiché en points : il tourne sur lui-même pendant que le serveur répond, puis
-claque sur la valeur tirée.
+Le plateau est en **3D** : on peut le faire tourner à la souris (glisser) et
+zoomer (molette). Le dé est un vrai cube qui roule avant de s'arrêter sur la
+valeur tirée, les pions bondissent de case en case au lieu de se téléporter, et
+la zone du joueur dont c'est le tour s'illumine sur le plateau.
+
+Le dé du panneau latéral fait la même chose : il reste présent comme repère et
+comme commande accessible au clavier et aux lecteurs d'écran.
 
 Un joueur qui recharge la page **reprend automatiquement son siège** : son
 identifiant est conservé dans le `localStorage` du navigateur, il n'y a donc
@@ -109,7 +113,9 @@ lib/ludo_web/
   controllers/    accueil, plateau, règles, sonde /sante
 priv/static/assets/
   css/ludo.css    styles écrits à la main
-  js/app.js       client : Socket Phoenix, plateau SVG, rendu de l'état
+  js/app.js       client : Socket Phoenix, lobby, panneau de jeu
+  js/board3d.js   plateau 3D (Three.js) : scène, pions, dé, animations
+  js/vendor/      three.module.min.js (vendorisé, voir plus bas)
   js/phoenix.min.js  client Phoenix officiel (vendorisé depuis Hex)
 ```
 
@@ -122,20 +128,42 @@ Quelques partis pris qui expliquent la structure :
   adressés au `GameServer`, ce qui supprime toute condition de course entre
   joueurs d'un même salon.
 * **La géométrie vient du serveur.** `Ludo.Board.geometry/0` est envoyée au
-  navigateur à la connexion : le JavaScript ne connaît aucune coordonnée et il
-  n'existe qu'une seule source de vérité pour la forme du plateau.
+  navigateur à la connexion : ni le panneau ni la scène 3D ne connaissent de
+  coordonnée, et il n'existe qu'une seule source de vérité pour la forme du
+  plateau.
+* **Aucune étape de build.** Pas de npm, pas de bundler : le client Phoenix et
+  Three.js sont vendorisés et servis tels quels, le CSS est écrit à la main.
+  `app.js` est un script classique et `board3d.js` un module ESM ; les deux se
+  synchronisent par l'événement `ludo3dready`, l'ordre de chargement des scripts
+  n'étant pas garanti. Three.js n'est chargé que sur la page de jeu.
+
+### Three.js
+
+Version **0.186.1**, build ESM minifié (747 Ko), vendorisé dans
+`priv/static/assets/js/vendor/three.module.min.js` depuis le paquet npm officiel :
+
+```bash
+curl -sL -o priv/static/assets/js/vendor/three.module.min.js \
+  https://cdn.jsdelivr.net/npm/three@0.186.1/+esm
+```
+
+Pour le mettre à jour : remplacer le fichier, puis lancer
+`node scripts/three_check.mjs`. Ce script vérifie notamment que tous les
+symboles `THREE.*` utilisés par `board3d.js` existent dans le bundle — une faute
+de frappe ne se verrait sinon qu'à l'exécution, chez l'utilisateur.
 
 ## Tests
 
 ```bash
-mix test                      # 139 tests : règles, IA, lobby, canaux
+mix test                      # 153 tests : règles, IA, lobby, canaux, pages
 
 # serveur lancé (mix phx.server ou docker compose up)
 node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
 
-# client navigateur, sans navigateur
+# client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
-node scripts/geometry_check.mjs /tmp/geometry.json   # 40 vérifications
+node scripts/geometry_check.mjs /tmp/geometry.json   # 26 vérifications : panneau, dé, bannière
+node scripts/three_check.mjs /tmp/geometry.json      # 26 vérifications : logique 3D
 ```
 
 `mix test` couvre notamment la géométrie (boucle fermée, symétrie des départs,

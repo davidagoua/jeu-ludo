@@ -71,10 +71,11 @@
   let myColor = null;
   let mySeat = null;
   let lastState = null;
-  let tokenEls = new Map();
-  let baseEls = {};
   let lastDice = null;
   let spinTimer = null;
+  // Le plateau est rendu en 3D ; le module s'annonce par l'événement
+  // `ludo3dready` (l'ordre de chargement des scripts n'est pas garanti).
+  const three = () => window.Ludo3D;
 
   // ---------------------------------------------------------------- socket
 
@@ -248,7 +249,7 @@
         myColor = payload.seat.color;
         lastState = payload.state;
 
-        buildBoard();
+        buildBoard3D();
         renderState(payload.state);
 
         if (payload.seat.how === "rejoined") {
@@ -266,23 +267,11 @@
       })
       .receive("timeout", () => toast("Le serveur ne répond pas."));
 
-    // Le dé lui-même est le bouton : on clique dessus pour lancer.
+    // Le dé du panneau est aussi un bouton : le plateau 3D appelle la même
+    // fonction quand on clique sur le dé en 3D.
     const diceButton = $("#dice");
 
-    diceButton.addEventListener("click", () => {
-      // on ne lance que si c'est possible (le bouton est désactivé sinon, mais
-      // on se protège aussi ici)
-      if (diceButton.disabled) return;
-
-      // le dé tourne immédiatement ; il s'arrêtera sur la valeur du serveur
-      startSpin();
-
-      push(game, "roll", {}, (reply) => {
-        lastState = reply.state;
-        stopSpin(reply.state.dice);
-        renderState(reply.state);
-      });
-    });
+    diceButton.addEventListener("click", () => rollDice());
 
     // au clavier : Entrée ou Espace sur le dé
     diceButton.addEventListener("keydown", (event) => {
@@ -300,166 +289,28 @@
     });
   }
 
-  // ---- construction du plateau (une seule fois)
+  // ---- plateau 3D (Three.js)
   //
-  // Aucune coordonnée de plateau n'est écrite ici : la position des bases, les
-  // triangles du centre et la case d'arrivée d'une couleur viennent tous de la
-  // géométrie envoyée par le serveur. Avoir ces valeurs en dur des deux côtés
-  // est exactement ce qui provoque une disposition incohérente quand le plateau
-  // change d'un seul côté.
+  // Aucune coordonnée n'est écrite ici : le module 3D reçoit la géométrie du
+  // serveur et s'occupe de tout (cases, pions, dé, animations). S'il n'est pas
+  // encore chargé, l'état est conservé et poussé dès son arrivée.
 
-  const NS = "http://www.w3.org/2000/svg";
+  function buildBoard3D() {
+    const canvas = $("#board3d");
+    if (!canvas) return;
 
-  function svgEl(tag, attrs) {
-    const el = document.createElementNS(NS, tag);
-    for (const key in attrs) el.setAttribute(key, attrs[key]);
-    return el;
-  }
-
-  function starPath(x, y, r) {
-    let d = "";
-    for (let i = 0; i < 10; i++) {
-      const radius = i % 2 === 0 ? r : r / 2.4;
-      const angle = (Math.PI / 5) * i - Math.PI / 2;
-      const px = x + radius * Math.cos(angle);
-      const py = y + radius * Math.sin(angle);
-      d += (i === 0 ? "M" : "L") + px.toFixed(3) + "," + py.toFixed(3);
-    }
-    return d + "Z";
-  }
-
-  function buildBoard() {
-    const svg = $("#board");
-    if (!svg || !geometry) return;
-    svg.innerHTML = "";
-    tokenEls = new Map();
-    baseEls = {};
-
-    const size = geometry.grid;
-    svg.setAttribute("viewBox", "0 0 " + size + " " + size);
-    svg.appendChild(svgEl("rect", { x: 0, y: 0, width: size, height: size, fill: "#141c26" }));
-
-    // bases : on garde une référence à chaque rectangle pour pouvoir mettre en
-    // évidence la zone du joueur dont c'est le tour
-    for (const color of geometry.players) {
-      const [bx, by] = geometry.base_areas[color];
-      const base = svgEl("rect", {
-        x: bx, y: by, width: 6, height: 6, rx: 0.3,
-        fill: geometry.colors[color], class: "base"
-      });
-      baseEls[color] = base;
-      svg.appendChild(base);
-      svg.appendChild(
-        svgEl("rect", { x: bx + 1, y: by + 1, width: 4, height: 4, rx: 0.2, class: "base-inner" })
-      );
-      for (const [sx, sy] of geometry.bases[color]) {
-        svg.appendChild(svgEl("circle", { cx: sx + 0.5, cy: sy + 0.5, r: 0.36, class: "base-slot" }));
-      }
+    if (!three() || !three().init(canvas)) {
+      // WebGL indisponible : on le dit clairement plutôt que d'afficher du vide
+      const message = $("#webgl-error");
+      if (message) message.hidden = false;
+      return;
     }
 
-    // cases de départ : colorées à la couleur du joueur, comme sur le plateau
-    const startOwner = {};
-    for (const color of geometry.players) startOwner[geometry.starts[color]] = color;
-
-    // anneau
-    geometry.ring.forEach(([x, y], index) => {
-      const safe = geometry.safe_indexes.indexOf(index) !== -1;
-      const owner = startOwner[index];
-
-      const attrs = {
-        x: x, y: y, width: 1, height: 1,
-        class: owner ? "cell start" : safe ? "cell safe" : "cell"
-      };
-      if (owner) attrs.fill = geometry.colors[owner];
-      svg.appendChild(svgEl("rect", attrs));
-
-      if (safe) {
-        // étoile blanche sur une case de départ colorée, grise ailleurs
-        svg.appendChild(
-          svgEl("path", {
-            d: starPath(x + 0.5, y + 0.5, 0.3),
-            fill: owner ? "#ffffff" : "#8494a8"
-          })
-        );
-      }
+    three().setGeometry(geometry);
+    three().setHandlers({
+      roll: () => rollDice(),
+      token: (index) => playToken(index)
     });
-
-    // colonnes d'arrivée
-    for (const color in geometry.home_columns) {
-      for (const [x, y] of geometry.home_columns[color]) {
-        svg.appendChild(
-          svgEl("rect", { x: x, y: y, width: 1, height: 1, fill: geometry.colors[color], class: "base" })
-        );
-      }
-    }
-
-    // centre : un triangle par couleur, orienté vers la case par laquelle ce
-    // joueur entre dans le centre (donnée par le serveur).
-    const cx = (geometry.grid - 1) / 2;
-    const cy = (geometry.grid - 1) / 2;
-    const mid = cx + 0.5;
-    const middle = cy + 0.5;
-
-    for (const color of geometry.players) {
-      const [ex, ey] = geometry.center_entries[color];
-
-      let corners;
-      if (ex <= cx - 1) {
-        corners = [[cx - 1, cy - 1], [cx - 1, cy + 2]]; // côté gauche
-      } else if (ex >= cx + 1) {
-        corners = [[cx + 2, cy - 1], [cx + 2, cy + 2]]; // côté droit
-      } else if (ey <= cy - 1) {
-        corners = [[cx - 1, cy - 1], [cx + 2, cy - 1]]; // côté haut
-      } else {
-        corners = [[cx - 1, cy + 2], [cx + 2, cy + 2]]; // côté bas
-      }
-
-      svg.appendChild(
-        svgEl("polygon", {
-          points: corners.concat([[mid, middle]]).map((p) => p.join(",")).join(" "),
-          fill: geometry.colors[color],
-          class: "center-tri"
-        })
-      );
-    }
-
-    // calque des pions
-    svg.appendChild(svgEl("g", { id: "tokens" }));
-  }
-
-  // ---- position d'un pion, en unités du plateau
-
-  /*
-   * Version pure : la géométrie est passée en argument, ce qui permet de la
-   * vérifier hors navigateur depuis scripts/geometry_check.mjs.
-   */
-  function tokenCellFor(geo, color, index, position) {
-    if (position === "base") {
-      const [x, y] = geo.bases[color][index];
-      return [x + 0.5, y + 0.5];
-    }
-
-    // 0..last_ring_position : anneau ; ensuite la colonne d'arrivée
-    if (position <= geo.last_ring_position) {
-      const idx = (geo.starts[color] + position) % geo.ring_size;
-      const [x, y] = geo.ring[idx];
-      return [x + 0.5, y + 0.5];
-    }
-
-    if (position < geo.finish) {
-      const [x, y] = geo.home_columns[color][position - geo.last_ring_position - 1];
-      return [x + 0.5, y + 0.5];
-    }
-
-    // arrivée : dans le triangle de sa couleur, au centre
-    const [fx, fy] = geo.center_entries[color];
-    const offsets = [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]];
-    const [ox, oy] = offsets[index] || [0, 0];
-    return [fx + 0.5 + ox, fy + 0.5 + oy];
-  }
-
-  function tokenCell(color, index, position) {
-    return tokenCellFor(geometry, color, index, position);
   }
 
   // ---- rendu
@@ -467,10 +318,12 @@
   function renderState(state) {
     if (!state || !geometry) return;
     renderPlayers(state);
-    renderActiveBase(state);
     renderTurn(state);
     renderBanner(state);
-    renderTokens(state);
+
+    if (three() && three().isReady()) {
+      three().update(state, myColor);
+    }
   }
 
   function renderPlayers(state) {
@@ -619,12 +472,30 @@
     }
   }
 
+  // Lancer le dé : appelé par le bouton du panneau comme par le dé en 3D.
+  function rollDice() {
+    const dice = $("#dice");
+    if (dice && dice.disabled) return;
+    if (!game || !lastState || lastState.status !== "playing") return;
+    if (lastState.turn_color !== myColor) return;
+    if (lastState.dice !== null) return;
+
+    startSpin();
+
+    push(game, "roll", {}, (reply) => {
+      lastState = reply.state;
+      stopSpin(reply.state.dice);
+      renderState(reply.state);
+    });
+  }
+
   function startSpin() {
     const dice = $("#dice");
     if (!dice) return;
 
     stopSpin();
     dice.classList.add("rolling");
+    if (three() && three().isReady()) three().setRolling(true);
 
     spinTimer = window.setInterval(() => {
       renderDiceFace(1 + Math.floor(Math.random() * 6));
@@ -641,21 +512,13 @@
     if (!dice) return;
 
     dice.classList.remove("rolling");
+    if (three() && three().isReady()) three().setRolling(false);
     renderDiceFace(value);
 
     if (value !== null) {
       dice.classList.remove("settled");
       void dice.offsetWidth;
       dice.classList.add("settled");
-    }
-  }
-
-  // ---- mise en évidence de la zone du joueur dont c'est le tour
-
-  function renderActiveBase(state) {
-    for (const color in baseEls) {
-      const active = state.status === "playing" && state.turn_color === color;
-      baseEls[color].classList.toggle("base-turn", active);
     }
   }
 
@@ -700,78 +563,6 @@
     banner.hidden = true;
   }
 
-  function renderTokens(state) {
-    const layer = $("#tokens");
-    if (!layer) return;
-
-    const playable = new Set(
-      state.status === "playing" && state.turn_color === myColor ? state.legal_moves : []
-    );
-
-    // On regroupe par case pour écarter les pions superposés.
-    const groups = new Map();
-
-    for (const player of state.players) {
-      player.tokens.forEach((position, index) => {
-        const [x, y] = tokenCell(player.color, index, position);
-        const key =
-          position === "base" ? player.color + ":base:" + index : x.toFixed(2) + ":" + y.toFixed(2);
-
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push({ color: player.color, index, x, y, position });
-      });
-    }
-
-    const placed = [];
-    for (const list of groups.values()) {
-      if (list.length === 1) {
-        placed.push(list[0]);
-      } else {
-        list.forEach((entry, i) => {
-          const angle = (Math.PI * 2 * i) / list.length;
-          placed.push({
-            color: entry.color,
-            index: entry.index,
-            position: entry.position,
-            x: entry.x + Math.cos(angle) * 0.17,
-            y: entry.y + Math.sin(angle) * 0.17
-          });
-        });
-      }
-    }
-
-    for (const entry of placed) {
-      const id = entry.color + ":" + entry.index;
-      let el = tokenEls.get(id);
-
-      if (!el) {
-        el = svgEl("g", { class: "token" });
-        el.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 0.36, fill: geometry.colors[entry.color] }));
-        el.appendChild(svgEl("circle", { cx: 0, cy: 0, r: 0.3, class: "token-ring" }));
-        layer.appendChild(el);
-        tokenEls.set(id, el);
-      }
-
-      el.style.transform = "translate(" + entry.x + "px," + entry.y + "px)";
-
-      const canPlay = entry.color === myColor && playable.has(entry.index);
-      el.classList.toggle("clickable", canPlay);
-      el.classList.toggle("highlight", canPlay);
-
-      // Le gestionnaire est posé une seule fois : on lit l'index courant dans
-      // le jeu de données, sinon un pion déplacé garderait son ancien index.
-      el.dataset.token = String(entry.index);
-
-      if (!el.dataset.bound) {
-        el.dataset.bound = "1";
-        el.addEventListener("click", (event) => {
-          const target = event.currentTarget;
-          if (!target.classList.contains("clickable")) return;
-          playToken(Number(target.dataset.token));
-        });
-      }
-    }
-  }
 
   function playToken(index) {
     if (!game) return;
@@ -786,6 +577,14 @@
   function main() {
     const page = $("[data-page]");
     if (!page) return;
+
+    // Le module 3D se charge en parallèle : dès qu'il est prêt, on lui donne la
+    // géométrie et le dernier état connu.
+    window.addEventListener("ludo3dready", () => {
+      if (page.dataset.page !== "game" || !geometry) return;
+      buildBoard3D();
+      if (lastState) renderState(lastState);
+    });
 
     if (page.dataset.page === "lobby") {
       initLobby();
@@ -820,8 +619,7 @@
         mySeat = seat;
         myColor = color;
       },
-      tokenCellFor: tokenCellFor,
-      buildBoard: buildBoard,
+      rollDice: rollDice,
       renderState: renderState
     }
   };

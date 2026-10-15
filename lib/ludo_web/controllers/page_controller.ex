@@ -23,7 +23,13 @@ defmodule LudoWeb.PageController do
 
     case Lobby.get_game(code) do
       {:ok, game} ->
-        render(conn, :game, page_title: "Salon #{code}", code: code, lobby: game)
+        render(conn, :game,
+          page_title: "Salon #{code}",
+          code: code,
+          lobby: game,
+          # le layout ne charge Three.js que sur cette page
+          load_board3d: true
+        )
 
       :error ->
         conn

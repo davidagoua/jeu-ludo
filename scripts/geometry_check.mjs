@@ -1,20 +1,13 @@
 /*
- * Vérifie le client navigateur sans navigateur.
+ * Vérifie le client sans navigateur.
  *
- * Le fichier est chargé avec un DOM factice minimal, puis :
+ * On charge `app.js` (script classique) avec un DOM factice, on lui injecte la
+ * géométrie réelle du serveur et on rejoue des états de partie complets. Cela
+ * couvre la liste des joueurs, le panneau du dé et la bannière.
  *
- *   1. `tokenCellFor` est confronté à la géométrie RÉELLE du serveur : chaque
- *      position de pion doit tomber sur la bonne case de la grille 15×15 ;
- *   2. `buildBoard` doit construire le plateau complet en SVG, avec les cases
- *      de départ colorées à la couleur de leur joueur ;
- *   3. `renderState` doit rendre les quatre états sans lever d'exception,
- *      placer les 16 pions, n'activer que les pions jouables et n'illuminer que
- *      la base du joueur dont c'est le tour ;
- *   4. le dé doit afficher des points (et non un chiffre), avec la bonne face.
- *
- * Le script ne code aucune constante du plateau : tout est lu dans la géométrie.
- *
- * La géométrie est produite par Elixir :
+ * Le plateau lui-même est en 3D : sa géométrie est vérifiée par
+ * scripts/three_check.mjs (fonctions pures du module Three.js), et la structure
+ * du plateau côté serveur par test/ludo/board_test.exs.
  *
  *   mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
  *   node scripts/geometry_check.mjs /tmp/geometry.json
@@ -26,23 +19,7 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const geometryPath = process.argv[2] || "/tmp/geometry.json";
-
-const failures = [];
-let checks = 0;
-
-function check(label, condition, detail) {
-  checks++;
-  if (condition) {
-    console.log("  OK   " + label);
-  } else {
-    failures.push(label);
-    console.log("  FAIL " + label + (detail === undefined ? "" : " -> " + JSON.stringify(detail)));
-  }
-}
-
-function section(title) {
-  console.log("\n== " + title + " ==");
-}
+const geo = JSON.parse(readFileSync(geometryPath, "utf8"));
 
 /* ------------------------------------------------------------- DOM factice */
 
@@ -54,10 +31,18 @@ function makeElement(tag) {
     attributes: {},
     style: {},
     dataset: {},
-    textContent: "",
+    hidden: false,
+    disabled: false,
     offsetWidth: 100,
-    // `className` et `classList` doivent rester cohérents : le client utilise
-    // les deux selon les endroits.
+    // comme dans un navigateur : le texte d'un élément agrège celui de ses enfants
+    get textContent() {
+      if (this.children.length) return this.children.map((c) => c.textContent).join("");
+      return this._text || "";
+    },
+    set textContent(value) {
+      this._text = String(value);
+      this.children = [];
+    },
     get className() {
       return Array.from(classes).join(" ");
     },
@@ -72,24 +57,17 @@ function makeElement(tag) {
       add: (c) => classes.add(c),
       remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
-      toggle: (c, on) =>
-        on === undefined
-          ? classes.has(c)
-            ? classes.delete(c)
-            : classes.add(c)
-          : on
-            ? classes.add(c)
-            : classes.delete(c)
+      toggle: (c, on) => (on ? classes.add(c) : classes.delete(c))
     },
     setAttribute(k, v) {
       this.attributes[k] = v;
-      if (k === "class") classes.add(v);
     },
     getAttribute(k) {
       return this.attributes[k];
     },
     appendChild(child) {
       this.children.push(child);
+      child.parent = this;
       return child;
     },
     addEventListener() {},
@@ -98,275 +76,84 @@ function makeElement(tag) {
     querySelector() {
       return null;
     },
-    set innerHTML(_value) {
+    set innerHTML(_v) {
       this.children = [];
     },
     get innerHTML() {
       return "";
     },
     allDescendants() {
-      const out = [];
-      const walk = (node) => {
-        for (const child of node.children) {
-          out.push(child);
-          walk(child);
-        }
-      };
-      walk(this);
-      return out;
+      return this.children.flatMap((c) => [c, ...c.allDescendants()]);
     }
   };
   return el;
 }
 
 const elements = new Map();
-
-function elementFor(selector) {
+const elementFor = (selector) => {
   if (!elements.has(selector)) elements.set(selector, makeElement("div"));
   return elements.get(selector);
-}
+};
 
-globalThis.window = globalThis;
+const listeners = {};
+
+globalThis.window = {
+  location: { href: "/" },
+  addEventListener: (name, fn) => {
+    listeners[name] = listeners[name] || [];
+    listeners[name].push(fn);
+  },
+  dispatchEvent: (event) => (listeners[event.type] || []).forEach((fn) => fn(event)),
+  setTimeout: () => 0,
+  setInterval: () => 0,
+  clearInterval: () => {},
+  localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
+};
+globalThis.Event = class Event {
+  constructor(type) {
+    this.type = type;
+  }
+};
 globalThis.document = {
   readyState: "complete",
-  // `[data-page]` reste introuvable : `main()` sort immédiatement et on pilote
-  // le rendu à la main.
+  hidden: false,
   querySelector: (selector) => (selector === "[data-page]" ? null : elementFor(selector)),
   querySelectorAll: () => [],
   createElement: (tag) => makeElement(tag),
   createElementNS: (_ns, tag) => makeElement(tag),
-  addEventListener() {}
+  addEventListener: (name, fn) => {
+    listeners[name] = listeners[name] || [];
+    listeners[name].push(fn);
+  }
 };
 
-const clientCode = readFileSync(join(here, "..", "priv/static/assets/js/app.js"), "utf8");
-(0, eval)(clientCode);
+(0, eval)(readFileSync(join(here, "..", "priv/static/assets/js/app.js"), "utf8"));
 
-const client = globalThis.LudoClient;
-const api = client && client.__test;
+// app.js s'expose sur `window`, qui est ici un objet factice et non globalThis
+const api = globalThis.window.LudoClient.__test;
 
-if (!client || !api) {
-  console.error("Le client n'a pas exposé LudoClient.__test");
-  process.exit(1);
+/* ------------------------------------------------------------------ outils */
+
+let failures = 0;
+let checks = 0;
+
+function section(title) {
+  console.log("\n== " + title + " ==");
 }
 
-const geo = JSON.parse(readFileSync(geometryPath, "utf8"));
-const grid = geo.grid;
-const lastRing = geo.last_ring_position;
-const finish = geo.finish;
-
-section("Chargement du client");
-check("app.js s'exécute et expose LudoClient", Boolean(client));
-check("la géométrie du serveur est lisible", geo.ring.length === geo.ring_size, geo.ring.length);
-check("la grille fait 15×15", grid === 15, grid);
-check("l'anneau s'arrête avant l'arrivée", lastRing < finish, { lastRing, finish });
-
-/* ------------------------------------------- positionnement des pions */
-
-section("Positionnement des pions");
-
-let allInGrid = true;
-let allDistinct = true;
-let pathContinuous = true;
-
-for (const color of geo.players) {
-  // positions de l'anneau et de la colonne d'arrivée : 0 à finish-1
-  const centres = [];
-
-  for (let pos = 0; pos < finish; pos++) {
-    const [x, y] = api.tokenCellFor(geo, color, 0, pos);
-
-    if (!(x >= 0 && x <= grid && y >= 0 && y <= grid)) {
-      allInGrid = false;
-      console.log("    hors grille : " + color + " pos " + pos + " -> " + x + "," + y);
-    }
-
-    centres.push(x + ":" + y);
-  }
-
-  if (new Set(centres).size !== centres.length) {
-    allDistinct = false;
-    console.log("    positions répétées pour " + color);
-  }
-
-  // le parcours doit être une suite de cases adjacentes
-  const cells = [];
-  for (let pos = 0; pos < finish; pos++) cells.push(api.tokenCellFor(geo, color, 0, pos));
-
-  for (let i = 1; i < cells.length; i++) {
-    const dx = Math.abs(cells[i][0] - cells[i - 1][0]);
-    const dy = Math.abs(cells[i][1] - cells[i - 1][1]);
-    if (Math.abs(dx - 1) > 1e-9 && Math.abs(dy - 1) > 1e-9) {
-      pathContinuous = false;
-      console.log("    parcours discontinu : " + color + " en " + i);
-      break;
-    }
-  }
-
-  // position 0 = case de départ du joueur
-  const [sx, sy] = api.tokenCellFor(geo, color, 0, 0);
-  const startCell = geo.ring[geo.starts[color]];
-  check(
-    "position 0 = case de départ (" + color + ")",
-    Math.abs(sx - (startCell[0] + 0.5)) < 1e-9 && Math.abs(sy - (startCell[1] + 0.5)) < 1e-9,
-    { got: [sx, sy], expected: [startCell[0] + 0.5, startCell[1] + 0.5] }
-  );
-
-  // dernière position d'anneau = entrée de la colonne d'arrivée
-  const [ex, ey] = api.tokenCellFor(geo, color, 0, lastRing);
-  const entrance = geo.ring[(geo.starts[color] + lastRing) % geo.ring_size];
-  check(
-    "position " + lastRing + " = entrée de la colonne (" + color + ")",
-    Math.abs(ex - (entrance[0] + 0.5)) < 1e-9 && Math.abs(ey - (entrance[1] + 0.5)) < 1e-9,
-    { got: [ex, ey], expected: [entrance[0] + 0.5, entrance[1] + 0.5] }
-  );
-
-  // colonne d'arrivée
-  let columnOk = true;
-  for (let k = 0; k < geo.home_length; k++) {
-    const [hx, hy] = api.tokenCellFor(geo, color, 0, lastRing + 1 + k);
-    const cell = geo.home_columns[color][k];
-    if (Math.abs(hx - (cell[0] + 0.5)) > 1e-9 || Math.abs(hy - (cell[1] + 0.5)) > 1e-9) columnOk = false;
-  }
-  check(
-    "positions " + (lastRing + 1) + "-" + (finish - 1) + " = colonne d'arrivée (" + color + ")",
-    columnOk
-  );
-
-  // base : chaque pion a son emplacement
-  let baseOk = true;
-  const basePositions = [];
-  for (let index = 0; index < 4; index++) {
-    const [bx, by] = api.tokenCellFor(geo, color, index, "base");
-    const slot = geo.bases[color][index];
-    basePositions.push(bx + ":" + by);
-    if (Math.abs(bx - (slot[0] + 0.5)) > 1e-9 || Math.abs(by - (slot[1] + 0.5)) > 1e-9) baseOk = false;
-  }
-  check("emplacements de base distincts (" + color + ")", new Set(basePositions).size === 4);
-  check("emplacements de base conformes (" + color + ")", baseOk);
-
-  // arrivée : le pion se range dans le triangle de sa couleur, au centre
-  const [fx, fy] = api.tokenCellFor(geo, color, 0, finish);
-  check(
-    "arrivée dans le carré central (" + color + ")",
-    fx >= 6 && fx <= 9 && fy >= 6 && fy <= 9,
-    [fx, fy]
-  );
-}
-
-check("toutes les positions restent dans la grille", allInGrid);
-check("les " + finish + " positions d'un parcours sont distinctes", allDistinct);
-check("le parcours est une suite de cases adjacentes", pathContinuous);
-
-/* --------------------------------------------------- construction du plateau */
-
-section("Construction du plateau");
-api.setGeometry(geo);
-
-let buildError = null;
-try {
-  api.buildBoard();
-} catch (error) {
-  buildError = error;
-}
-check("buildBoard() ne lève pas d'exception", buildError === null, buildError && buildError.message);
-
-const board = elementFor("#board");
-const boardParts = board.allDescendants();
-check("le plateau contient des éléments SVG", boardParts.length > geo.ring_size, boardParts.length);
-check(
-  "le calque des pions existe",
-  boardParts.some((c) => c.attributes && c.attributes.id === "tokens")
-);
-
-// les cases de départ sont colorées de la couleur de leur joueur
-let startsColoured = true;
-for (const color of geo.players) {
-  const cell = geo.ring[geo.starts[color]];
-  const found = boardParts.find(
-    (el) =>
-      el.tagName === "rect" &&
-      el.attributes.x === cell[0] &&
-      el.attributes.y === cell[1] &&
-      el.attributes.width === 1
-  );
-  if (!found || found.attributes.fill !== geo.colors[color]) {
-    startsColoured = false;
-    console.log("    case de départ non colorée : " + color);
+function check(label, ok, detail) {
+  checks++;
+  if (ok) {
+    console.log("  OK   " + label);
+  } else {
+    failures++;
+    console.log("  FAIL " + label + (detail === undefined ? "" : " -> " + JSON.stringify(detail)));
   }
 }
-check("les cases de départ portent la couleur de leur joueur", startsColoured);
 
-// une étoile est dessinée sur chacune des 8 cases sûres
-const stars = boardParts.filter((el) => el.tagName === "path").length;
-check("les 8 cases sûres portent une étoile", stars === geo.safe_indexes.length, stars);
+/* ------------------------------------------------------------------ états */
 
-// chaque base est peinte à la position ET à la couleur données par le serveur.
-// C'est le contrôle qui manquait quand le client gardait ses propres
-// coordonnées en dur : le plateau était alors incohérent avec le serveur.
-let basesOk = true;
-for (const color of geo.players) {
-  const [bx, by] = geo.base_areas[color];
-  const found = boardParts.find(
-    (el) =>
-      el.tagName === "rect" &&
-      el.attributes.width === 6 &&
-      el.attributes.x === bx &&
-      el.attributes.y === by
-  );
-
-  if (!found || found.attributes.fill !== geo.colors[color]) {
-    basesOk = false;
-    console.log(
-      "    base " + color + " : attendue en (" + bx + "," + by + ") " + geo.colors[color] +
-        ", trouvée " + (found ? JSON.stringify(found.attributes) : "absente")
-    );
-  }
-}
-check("chaque base est peinte à la position et couleur du serveur", basesOk);
-
-// les quatre triangles du centre existent et pointent vers la colonne de leur
-// couleur, c'est-à-dire du côté de la case d'entrée donnée par le serveur.
-const triangles = boardParts.filter((el) => el.tagName === "polygon");
-check("les quatre triangles du centre sont dessinés", triangles.length === 4, triangles.length);
-
-let trianglesOk = true;
-for (const color of geo.players) {
-  const [ex, ey] = geo.center_entries[color];
-  const side =
-    ex < 7 ? "gauche" : ex > 7 ? "droite" : ey < 7 ? "haut" : "bas";
-
-  const tri = triangles.find((t) => t.attributes.fill === geo.colors[color]);
-  if (!tri) {
-    trianglesOk = false;
-    console.log("    triangle manquant pour " + color);
-    continue;
-  }
-
-  // l'apex est le centre (7,5 ; 7,5) : on vérifie l'orientation par la base
-  const pts = tri.attributes.points.split(" ").map((p) => p.split(",").map(Number));
-  const base = pts.slice(0, 2);
-  const onLeft = base.every(([x]) => x === 6);
-  const onRight = base.every(([x]) => x === 9);
-  const onTop = base.every(([, y]) => y === 6);
-  const onBottom = base.every(([, y]) => y === 9);
-
-  const actual = onLeft ? "gauche" : onRight ? "droite" : onTop ? "haut" : onBottom ? "bas" : "?";
-  if (actual !== side) {
-    trianglesOk = false;
-    console.log("    triangle " + color + " : " + actual + " au lieu de " + side);
-  }
-}
-check("chaque triangle du centre pointe vers sa colonne d'arrivée", trianglesOk);
-
-/* ------------------------------------------------------------- rendu d'état */
-
-section("Rendu des états");
-
-// sans cette information, le client ne sait pas quels pions sont les siens et
-// aucun pion ne serait cliquable.
-api.setSeat(0, "red");
-
-function syntheticState(overrides) {
+function syntheticState(overrides = {}) {
   const players = geo.players.map((color, seat) => ({
     seat,
     name: "Joueur " + seat,
@@ -389,140 +176,201 @@ function syntheticState(overrides) {
       turn_color: geo.players[0],
       turn_name: "Joueur 0",
       turn_is_bot: false,
-      dice: 3,
+      dice: null,
       six_streak: 0,
       version: 1,
       players,
-      legal_moves: [0, 1],
-      log: [{ type: "rolled", text: "Joueur 0 lance un 3." }]
+      legal_moves: [],
+      log: []
     },
     overrides
   );
 }
 
-const scenarios = {
-  attente: syntheticState({ status: "waiting", dice: null, legal_moves: [] }),
-  sans_de: syntheticState({ dice: null, legal_moves: [] }),
-  en_cours: syntheticState({
-    players: geo.players.map((color, seat) => ({
-      seat,
-      name: "Joueur " + seat,
-      color,
-      kind: "human",
-      connected: seat !== 3,
-      tokens:
-        seat === 0
-          ? [0, 20, lastRing, finish]
-          : seat === 1
-            ? [5, 34, 40, "base"]
-            : seat === 2
-              ? [lastRing + 1, "base", "base", "base"]
-              : ["base", "base", "base", "base"],
-      finished: seat === 0 ? 1 : 0
-    })),
-    dice: 6,
-    legal_moves: [1]
-  }),
-  termine: syntheticState({ status: "finished", winner: geo.players[1], dice: null, legal_moves: [] })
-};
+api.setGeometry(geo);
+api.setSeat(0, geo.players[0]);
 
-let clickableInPlay = null;
-let highlightedInPlay = null;
-let activeBasesInPlay = null;
+/* ----------------------------------------------------------- liste joueurs */
 
-for (const [name, state] of Object.entries(scenarios)) {
-  let error = null;
-  try {
-    api.renderState(state);
-  } catch (e) {
-    error = e;
-  }
-  check("renderState(" + name + ") sans exception", error === null, error && error.message);
+section("Liste des joueurs");
 
-  if (name === "en_cours") {
-    const layer = elementFor("#tokens");
-    check("les 16 pions sont rendus", layer.children.length === 16, layer.children.length);
+api.renderState(syntheticState({ turn: 2, turn_color: geo.players[2] }));
 
-    clickableInPlay = layer.children.filter((t) => t.classList.contains("clickable")).length;
-    highlightedInPlay = layer.children.filter((t) => t.classList.contains("highlight")).length;
+const playersList = elementFor("#players");
+const rows = playersList.children;
 
-    // seule la base du joueur dont c'est le tour doit être illuminée
-    activeBasesInPlay = boardParts.filter((el) => el.classList.contains("base-turn")).length;
-  }
-}
+check("les quatre joueurs sont listés", rows.length === 4, rows.length);
+check(
+  "chaque ligne porte la couleur de son joueur",
+  rows.every((li, i) => {
+    const swatch = li.children.find((c) => c.classList.contains("swatch"));
+    return swatch && swatch.style.background === geo.colors[geo.players[i]];
+  })
+);
+check(
+  "un seul joueur est mis en évidence",
+  rows.filter((li) => li.classList.contains("active")).length === 1
+);
+check(
+  "c'est bien le joueur dont c'est le tour",
+  rows[2] && rows[2].classList.contains("active")
+);
+check(
+  "le joueur local est signalé",
+  rows[0] &&
+    rows[0].children.some(
+      (c) => c.classList.contains("player-name") && c.textContent.indexOf("(vous)") !== -1
+    )
+);
+check(
+  "les IA sont étiquetées",
+  rows.filter((li) => li.children.some((c) => c.classList.contains("tag"))).length === 3
+);
+check(
+  "la progression est affichée",
+  rows.every((li) =>
+    li.children.some((c) => c.classList.contains("player-meta") && c.textContent === "0/4")
+  )
+);
 
-// un seul pion est jouable dans cette scénario (legal_moves = [1] pour le siège 0)
-check("seuls les pions jouables sont cliquables", clickableInPlay === 1, clickableInPlay);
-check("les pions jouables sont mis en surbrillance", highlightedInPlay === 1, highlightedInPlay);
-check("une seule zone de joueur est illuminée", activeBasesInPlay === 1, activeBasesInPlay);
-
-/* ------------------------------------------------------------------- le dé */
+/* --------------------------------------------------------------------- dé */
 
 section("Le dé");
 
 const dice = elementFor("#dice");
-api.renderState(syntheticState({ dice: 5, legal_moves: [0] }));
+const hint = elementFor("#hint");
 
-// Le dé est le bouton de lancer : il ne doit être actif que lorsqu'on peut
-// réellement lancer, c'est-à-dire à son tour et avant d'avoir lancé.
-// (Que ce soit bien un <button> dans la page est vérifié côté Elixir, dans
-// page_controller_test.exs : le DOM factice ne connaît pas la balise réelle.)
-
-api.renderState(
-  syntheticState({ dice: null, legal_moves: [], turn_color: geo.players[0] })
-);
+api.renderState(syntheticState({ dice: null, turn_color: geo.players[0] }));
 check("à son tour, dé non lancé : le dé est actif", dice.disabled === false, dice.disabled);
-check("le dé actif invite au clic", dice.classList.contains("ready") === true);
-
-api.renderState(
-  syntheticState({ dice: null, legal_moves: [], turn_color: geo.players[1] })
+check("le dé actif invite au clic", dice.classList.contains("ready"));
+check(
+  "l'indication invite à cliquer sur le dé",
+  hint.textContent.indexOf("Cliquez") !== -1 && hint.textContent.indexOf("dé") !== -1,
+  hint.textContent
 );
+
+api.renderState(syntheticState({ dice: null, turn_color: geo.players[1] }));
 check("au tour d'un autre : le dé est inactif", dice.disabled === true, dice.disabled);
-check("le dé inactif n'invite pas au clic", dice.classList.contains("ready") === false);
+check("le dé inactif n'invite pas au clic", !dice.classList.contains("ready"));
 
-api.renderState(
-  syntheticState({ dice: 4, legal_moves: [], turn_color: geo.players[0] })
-);
+api.renderState(syntheticState({ dice: 4, turn_color: geo.players[0] }));
 check("dé déjà lancé : le dé est inactif", dice.disabled === true, dice.disabled);
 
-// Les points sont dans l'ordre 0..8 d'une grille 3x3 : un 5 allume les quatre
-// coins et le centre.
-api.renderState(syntheticState({ dice: 5, legal_moves: [0] }));
-const pipEls = dice.allDescendants().filter((el) => el.classList.contains("pip"));
-const litIndexes = pipEls
-  .map((el, i) => (el.classList.contains("on") ? i : -1))
-  .filter((i) => i !== -1);
+// faces à points : grille 3x3, indices des points allumés
+const FACES = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8]
+};
 
-check("le dé affiche 9 emplacements de points", pipEls.length === 9, pipEls.length);
-check(
-  "un 5 allume les quatre coins et le centre",
-  JSON.stringify(litIndexes) === JSON.stringify([0, 2, 4, 6, 8]),
-  litIndexes
-);
-check("le dé n'affiche aucun texte", dice.textContent === "", JSON.stringify(dice.textContent));
-
-// chaque face allume le bon nombre de points
-const expectedPips = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6 };
 let facesOk = true;
-for (const [value, count] of Object.entries(expectedPips)) {
-  api.renderState(syntheticState({ dice: Number(value), legal_moves: [] }));
-  const on = elementFor("#dice")
-    .allDescendants()
-    .filter((el) => el.classList.contains("pip") && el.classList.contains("on")).length;
-  if (on !== count) {
+let pipsOk = true;
+
+for (const value of [1, 2, 3, 4, 5, 6]) {
+  api.renderState(syntheticState({ dice: value, turn_color: geo.players[0] }));
+
+  const pips = dice.allDescendants().filter((el) => el.classList.contains("pip"));
+  if (pips.length !== 9) pipsOk = false;
+
+  const lit = pips.map((el, i) => (el.classList.contains("on") ? i : -1)).filter((i) => i !== -1);
+  if (JSON.stringify(lit) !== JSON.stringify(FACES[value])) {
     facesOk = false;
-    console.log("    face " + value + " : " + on + " points au lieu de " + count);
+    console.log("    face " + value + " : " + JSON.stringify(lit));
   }
 }
-check("chaque face allume le bon nombre de points", facesOk);
 
-api.renderState(syntheticState({ status: "waiting", dice: null, legal_moves: [] }));
-const noneLit = elementFor("#dice")
-  .allDescendants()
-  .filter((el) => el.classList.contains("pip") && el.classList.contains("on")).length;
-check("aucun dé lancé : aucun point allumé", noneLit === 0, noneLit);
+check("le dé affiche une grille de 9 points", pipsOk);
+check("chaque face allume exactement les bons points", facesOk);
+check(
+  "le dé n'affiche aucun texte",
+  dice.allDescendants().every((el) => !el.textContent) && !dice.textContent
+);
 
-section("Résultat");
-console.log(failures.length === 0 ? "Tous les tests passent." : "ÉCHECS : " + failures.join(", "));
+api.renderState(syntheticState({ dice: null, turn_color: geo.players[0] }));
+check(
+  "aucun dé lancé : aucun point allumé",
+  dice.allDescendants().filter((el) => el.classList.contains("on")).length === 0
+);
+
+/* -------------------------------------------------------------- bannière */
+
+section("Bannière");
+
+const banner = elementFor("#banner");
+
+api.renderState(syntheticState({ status: "waiting", dice: null }));
+check("en attente : la bannière est visible", banner.hidden === false);
+check(
+  "en attente : elle indique ce qu'on attend",
+  typeof banner.textContent === "string" && banner.textContent.length > 0,
+  banner.textContent
+);
+
+api.renderState(syntheticState({ turn_color: geo.players[1] }));
+check("en cours : la bannière est masquée", banner.hidden === true);
+
+api.renderState(
+  syntheticState({ status: "finished", winner: geo.players[2], turn_color: geo.players[2] })
+);
+check("partie terminée : la bannière est visible", banner.hidden === false);
+check(
+  "partie terminée : le vainqueur est nommé",
+  String(banner.textContent).indexOf("Joueur 2") !== -1,
+  banner.textContent
+);
+
+/* ----------------------------------------------------- robustesse du rendu */
+
+section("Robustesse du rendu");
+
+let error = null;
+for (const status of ["waiting", "playing", "finished"]) {
+  try {
+    api.renderState(syntheticState({ status }));
+  } catch (e) {
+    error = e;
+  }
+}
+check("renderState ne lève jamais d'exception", error === null, error && error.message);
+
+try {
+  api.renderState(null);
+  api.renderState(undefined);
+  error = null;
+} catch (e) {
+  error = e;
+}
+check("un état absent est ignoré sans planter", error === null, error && error.message);
+
+// le dé ne doit rien lancer si ce n'est pas possible
+api.renderState(syntheticState({ dice: null, turn_color: geo.players[1] }));
+try {
+  api.rollDice();
+  error = null;
+} catch (e) {
+  error = e;
+}
+check("lancer le dé hors de son tour ne fait rien", error === null, error && error.message);
+
+api.renderState(syntheticState({ status: "waiting", dice: null, turn_color: geo.players[0] }));
+try {
+  api.rollDice();
+  error = null;
+} catch (e) {
+  error = e;
+}
+check("lancer le dé en attente de joueurs ne fait rien", error === null, error && error.message);
+
+/* ------------------------------------------------------------------ résultat */
+
+console.log("\n== Résultat ==");
+if (failures === 0) {
+  console.log("Tous les tests passent.");
+} else {
+  console.log("ÉCHECS : " + failures);
+  process.exitCode = 1;
+}
 console.log(checks + " vérifications");
-process.exit(failures.length === 0 ? 0 : 1);

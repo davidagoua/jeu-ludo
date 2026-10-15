@@ -10,8 +10,11 @@
 
   <div class="game-layout">
     <div class="board-wrap">
-      <svg id="board" viewBox="0 0 15 15" role="img" aria-label="Plateau de Ludo"></svg>
+      <canvas id="board3d" role="img" aria-label="Plateau de Ludo en 3D"></canvas>
       <div class="banner" id="banner" hidden></div>
+      <p class="webgl-error" id="webgl-error" hidden>
+        Votre navigateur ne peut pas afficher la 3D (WebGL indisponible).
+      </p>
     </div>
 
     <aside class="side">
