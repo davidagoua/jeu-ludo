@@ -470,6 +470,34 @@ defmodule Ludo.GameTest do
     end
   end
 
+  # --- réactions -------------------------------------------------------------
+
+  describe "réactions" do
+    test "la liste est utilisable telle quelle par le navigateur" do
+      reactions = Game.reactions()
+
+      assert reactions != []
+      assert length(Enum.uniq(reactions)) == length(reactions), "des doublons"
+      assert Enum.all?(reactions, &is_binary/1)
+      # un seul pictogramme par réaction : pas de texte libre
+      assert Enum.all?(reactions, &(String.length(&1) <= 4))
+    end
+
+    test "la couleur et le nom d'un joueur suivent son siège" do
+      game = Game.new("T", :p4, "Alice", "alice-1111")
+
+      assert {:ok, %{color: :red, name: "Alice"}} == Game.player_identity(game, "alice-1111")
+
+      {:ok, game, _} = Game.choose_seat(game, "alice-1111", 2)
+      assert {:ok, %{color: :yellow}} = Game.player_identity(game, "alice-1111")
+    end
+
+    test "un joueur absent n'a pas de couleur" do
+      game = Game.new("T", :p4, "Alice", "alice-1111")
+      assert {:error, :not_in_game} == Game.player_identity(game, "inconnu-9999")
+    end
+  end
+
   # --- nombre d'IA ----------------------------------------------------------
 
   describe "nombre d'IA en mode solo" do

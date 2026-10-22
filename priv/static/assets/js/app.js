@@ -277,6 +277,9 @@
       renderState(state);
     });
 
+    // Une réaction n'est pas un état : elle ne fait que s'afficher un instant.
+    game.on("reaction", (reaction) => showReaction(reaction));
+
     game
       .join()
       .receive("ok", (payload) => {
@@ -284,6 +287,8 @@
         mySeat = payload.seat.seat;
         myColor = payload.seat.color;
         lastState = payload.state;
+
+        setupReactions(payload.reactions);
 
         // on ne rejoue pas l'historique du journal à l'arrivée
         if (sound()) soundedLog = payload.state.log || [];
@@ -366,6 +371,106 @@
     if (three() && three().isReady()) {
       three().update(state, myColor);
     }
+  }
+
+  /* ------------------------------------------------------------- réactions */
+
+  // Durée d'affichage d'une réaction, en millisecondes.
+  const REACTION_MS = 2000;
+
+  let reactions = [];
+
+  /** Construit la grille d'emojis à partir de la liste du serveur. */
+  function setupReactions(liste) {
+    reactions = liste || [];
+
+    const grid = $("#emoji-grid");
+    if (grid) {
+      grid.innerHTML = "";
+
+      for (const emoji of reactions) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "emoji";
+        button.textContent = emoji;
+        button.setAttribute("aria-label", "Réagir avec " + emoji);
+        button.addEventListener("click", () => sendReaction(emoji));
+        grid.appendChild(button);
+      }
+    }
+
+    const modal = $("#emoji-modal");
+
+    const ouvrir = () => {
+      if (!modal) return;
+      modal.hidden = false;
+      const premier = grid && grid.children[0];
+      if (premier && premier.focus) premier.focus();
+    };
+
+    const fermer = () => {
+      if (modal) modal.hidden = true;
+    };
+
+    const bouton = $("#emoji-open");
+    if (bouton) bouton.addEventListener("click", ouvrir);
+
+    const close = $("#emoji-close");
+    if (close) close.addEventListener("click", fermer);
+
+    // un clic sur le fond sombre ferme aussi
+    if (modal) {
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) fermer();
+      });
+    }
+
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && modal && !modal.hidden) fermer();
+    });
+  }
+
+  /** Envoie une réaction. La modale se referme tout de suite. */
+  function sendReaction(emoji) {
+    const modal = $("#emoji-modal");
+    if (modal) modal.hidden = true;
+
+    if (!game || !reactions.includes(emoji)) return;
+
+    push(game, "react", { emoji: emoji }, (reply) => {
+      if (reply && reply.reason) toast(reply.message || "Réaction refusée.");
+    });
+  }
+
+  /**
+   * Affiche une réaction pendant deux secondes, dans le coin du joueur.
+   *
+   * La couche n'est jamais reconstruite : un changement d'état ne peut donc pas
+   * effacer une réaction en cours.
+   */
+  function showReaction(reaction) {
+    const overlay = $("#reactions");
+    if (!overlay || !reaction || !reaction.emoji) return;
+
+    const bulle = document.createElement("span");
+    bulle.className = "reaction " + reaction.color;
+    bulle.textContent = reaction.emoji;
+
+    // Le nom vient du serveur ; à défaut, on retombe sur l'état connu.
+    const joueur = (lastState && lastState.players ? lastState.players : []).find(
+      (p) => p.color === reaction.color
+    );
+    const nom = reaction.name || (joueur ? joueur.name : reaction.color);
+
+    bulle.setAttribute("title", nom + " réagit");
+    bulle.setAttribute("aria-label", nom + " : " + reaction.emoji);
+
+    overlay.appendChild(bulle);
+
+    window.setTimeout(() => {
+      if (bulle.remove) bulle.remove();
+      else if (bulle.parentNode) bulle.parentNode.removeChild(bulle);
+    }, REACTION_MS);
   }
 
   /* ------------------------------------------------------------- bruitage */
@@ -814,6 +919,25 @@
     __test: {
       setGeometry: function (geo) {
         geometry = geo;
+      },
+      setupReactions: function (list) {
+        setupReactions(list);
+      },
+      reactionsList: function () {
+        return reactions;
+      },
+      sendReaction: function (emoji) {
+        sendReaction(emoji);
+      },
+      showReaction: function (reaction) {
+        showReaction(reaction);
+      },
+      reactionDuration: function () {
+        return REACTION_MS;
+      },
+      openEmoji: function () {
+        const modal = $("#emoji-modal");
+        if (modal) modal.hidden = false;
       },
       setSeat: function (seat, color) {
         mySeat = seat;

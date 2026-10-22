@@ -14,6 +14,16 @@
     >
       Son activé
     </button>
+    <button
+      id="emoji-open"
+      class="secondary small"
+      type="button"
+      aria-haspopup="dialog"
+      aria-controls="emoji-modal"
+      title="Envoyer une réaction"
+    >
+      😀 Réagir
+    </button>
     <button id="copy-link" class="secondary small" type="button">Copier le lien</button>
   </header>
 
@@ -21,6 +31,11 @@
     <div class="board-wrap">
       <canvas id="board3d" role="img" aria-label="Plateau de Ludo"></canvas>
       <div class="banner" id="banner" hidden></div>
+
+      <%!-- Réactions des joueurs : elles s'affichent deux secondes puis
+           disparaissent. La couche n'est jamais reconstruite, un changement
+           d'état ne peut donc pas effacer une réaction en cours. --%>
+      <div class="reactions" id="reactions" aria-live="polite"></div>
       <p class="webgl-error" id="webgl-error" hidden>
         Votre navigateur ne peut pas afficher le plateau (WebGL indisponible).
       </p>
@@ -65,6 +80,21 @@
       </label>
       <button class="primary" type="submit">Entrer dans le salon {@code}</button>
     </form>
+  </div>
+
+  <%!-- Choix de la réaction : une feuille modale, fermée par Échap, par un clic
+       à côté ou par le bouton. --%>
+  <div class="emoji-modal" id="emoji-modal" hidden>
+    <div
+      class="emoji-sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="emoji-title"
+    >
+      <p class="emoji-title" id="emoji-title">Votre réaction</p>
+      <div class="emoji-grid" id="emoji-grid"></div>
+      <button id="emoji-close" class="secondary small" type="button">Fermer</button>
+    </div>
   </div>
 
   <div class="toast" id="toast" hidden></div>

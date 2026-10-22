@@ -46,6 +46,25 @@ defmodule LudoWeb.PageControllerTest do
     end
   end
 
+  describe "GET /partie/:code — réactions" do
+    test "la page propose un bouton de réactions et sa modale", %{conn: conn} do
+      {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-react-1111")
+      html = get(conn, ~p"/partie/#{code}") |> html_response(200)
+
+      # le bouton, la modale (fermée au départ) et la couche d'affichage
+      assert html =~ ~s(id="emoji-open")
+      assert html =~ ~s(id="emoji-modal")
+      assert html =~ ~r/id="emoji-modal"[^>]*hidden/
+      assert html =~ ~s(id="emoji-grid")
+      assert html =~ ~s(id="emoji-close")
+      assert html =~ ~s(id="reactions")
+      assert html =~ ~s(aria-live="polite")
+      # la modale est un vrai dialogue modal pour l'accessibilité
+      assert html =~ ~s(role="dialog")
+      assert html =~ ~s(aria-modal="true")
+    end
+  end
+
   describe "GET /partie/:code — bruitage" do
     test "la page de jeu charge le bruitage et propose de le couper", %{conn: conn} do
       {:ok, code} = Ludo.Lobby.create_game(:p2, "Alice", "player-son-1111")

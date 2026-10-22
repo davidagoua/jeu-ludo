@@ -213,10 +213,67 @@ async function main() {
     aliceJoin.geometry.ring.length === 52 && aliceJoin.geometry.finish === 56
   );
   check("l'état initial attend des joueurs", aliceJoin.state.status === "waiting");
+  check(
+    "la liste des réactions accompagne la connexion",
+    Array.isArray(aliceJoin.reactions) && aliceJoin.reactions.length >= 8,
+    aliceJoin.reactions && aliceJoin.reactions.length
+  );
 
   const bob = new ChannelClient("game:" + code, { name: "Bob", player_id: playerId("bob") });
   await bob.connect();
   const bobJoin = await bob.join();
+
+  // --- la page réellement servie contient l'interface de réactions ---------
+  const page = await (await fetch(base + "/partie/" + code)).text();
+  check("la page de jeu contient le bouton de réactions", page.includes('id="emoji-open"'));
+  check("la page de jeu contient la modale", page.includes('id="emoji-modal"'));
+  check("la page de jeu contient la couche d'affichage", page.includes('id="reactions"'));
+  check(
+    "la modale est un dialogue accessible",
+    page.includes('role="dialog"') && page.includes('aria-modal="true"')
+  );
+  check("le bruitage est chargé sur la page", page.includes("/assets/js/sound.js"));
+
+  // --- réactions : Alice réagit, Bob doit la voir --------------------------
+  const receptionAlice = alice.next("reaction", 3000);
+  const receptionBob = bob.next("reaction", 3000);
+
+  await alice.push("react", { emoji: "👍" });
+
+  const vueParAlice = await receptionAlice;
+  const vueParBob = await receptionBob;
+
+  check(
+    "l'auteur voit sa propre réaction",
+    vueParAlice.emoji === "👍" && vueParAlice.color === "red",
+    vueParAlice
+  );
+  check(
+    "les autres joueurs voient la réaction",
+    vueParBob.emoji === "👍" && vueParBob.color === "red" && vueParBob.name === "Alice",
+    vueParBob
+  );
+
+  // un emoji inventé est refusé
+  let refus = null;
+  try {
+    await alice.push("react", { emoji: "<script>alert(1)</script>" });
+  } catch (erreur) {
+    refus = erreur.response;
+  }
+  check("un emoji hors liste est refusé", refus && refus.reason === "unknown_emoji", refus);
+
+  // une réaction ne doit pas changer l'état de la partie
+  const avantReaction = await alice.push("state", {});
+  await new Promise((r) => setTimeout(r, 520));
+  await alice.push("react", { emoji: "😂" });
+  const apresReaction = await alice.push("state", {});
+
+  check(
+    "une réaction ne modifie pas la partie",
+    apresReaction.state.version === avantReaction.state.version,
+    { avant: avantReaction.state.version, apres: apresReaction.state.version }
+  );
 
   // l'ordre des couleurs suit les sièges : rouge puis bleu
   check("le second joueur prend le siège bleu", bobJoin.seat.color === "blue", bobJoin.seat);

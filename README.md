@@ -170,6 +170,13 @@ Quelques partis pris qui expliquent la structure :
   nœuds SVG : les déplacements de pions, le roulement du dé et les pulsations
   sont animés image par image, sans reflow. La vue est orthographique et
   verticale, donc le rendu reste celui d'un plateau 2D classique.
+* **Des réactions emoji, sans toucher à la partie.** Un bouton ouvre une feuille
+  modale de seize réactions ; le choix part au serveur, qui n'accepte que les
+  pictogrammes de sa liste (jamais de texte libre) et le rediffuse à tout le
+  salon. La réaction s'affiche **deux secondes** dans le coin du joueur, sur le
+  plateau, puis s'efface. Ce n'est pas un changement d'état : la version de la
+  partie ne bouge pas, et la couche d'affichage n'est jamais reconstruite, si bien
+  qu'un état reçu en cours d'affichage n'efface pas une réaction.
 * **Le bruitage est synthétisé, pas échantillonné.** Aucun fichier son : les huit
   sons (dé qui roule, dé qui s'arrête, pion qui avance, capture, arrivée,
   victoire, tour perdu, c'est à vous) sont fabriqués par des oscillateurs et du
@@ -200,14 +207,14 @@ de frappe ne se verrait sinon qu'à l'exécution, chez l'utilisateur.
 ## Tests
 
 ```bash
-mix test                      # 181 tests : règles, IA, lobby, canaux, pages
+mix test                      # 193 tests : règles, IA, lobby, canaux, pages
 
 # serveur lancé (mix phx.server ou docker compose up)
-node scripts/ws_smoke.mjs     # 29 vérifications en WebSocket réel
+node scripts/ws_smoke.mjs     # 39 vérifications en WebSocket réel
 
 # client, sans navigateur
 mix run -e 'IO.puts(Jason.encode!(Ludo.Board.geometry()))' 2>/dev/null | tail -1 > /tmp/geometry.json
-node scripts/geometry_check.mjs /tmp/geometry.json   # 48 vérifications : panneau, camps, dé
+node scripts/geometry_check.mjs /tmp/geometry.json   # 83 vérifications : panneau, camps, dé, réactions
 node scripts/three_check.mjs /tmp/geometry.json      # 88 vérifications : scène, cadrage, dés, clic, doigt
 node scripts/sound_check.mjs                         # 57 vérifications : bruitage, sourdine
 
@@ -238,6 +245,18 @@ créés : c'est la seule façon de vérifier sans haut-parleur qu'un son produit
 quelque chose, et qu'un son coupé ne produit rien. Il couvre aussi la lecture du
 réglage au chargement suivant et le repérage des événements nouveaux dans le
 journal borné du serveur.
+
+## Réactions
+
+Chaque joueur peut envoyer une réaction en cours de partie : le bouton **😀 Réagir**
+ouvre une feuille modale de seize pictogrammes, et le choix apparaît **deux
+secondes** dans le coin de son camp pour tout le monde.
+
+Le serveur ne relaie jamais un texte libre : il vérifie que l'emoji fait partie de
+sa liste (`Ludo.Game.reactions/0`), sinon il refuse. Deux réactions d'un même
+joueur ne peuvent pas se suivre de plus près que 500 ms, pour ne pas noyer les
+autres joueurs. Une réaction n'est pas un changement d'état : elle n'incrémente
+pas la version de la partie et n'apparaît pas dans son journal.
 
 ## Configuration
 

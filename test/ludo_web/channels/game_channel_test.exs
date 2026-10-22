@@ -49,6 +49,84 @@ defmodule LudoWeb.GameChannelTest do
     end
   end
 
+  describe "réactions" do
+    setup do
+      {code, host} = create(:p4)
+      {:ok, reply, socket} = join_game(code, "Alice", host)
+      %{code: code, socket: socket, reply: reply}
+    end
+
+    test "la liste des réactions accompagne la connexion", %{reply: reply} do
+      assert reply.reactions == Ludo.Game.reactions()
+      assert "👍" in reply.reactions
+    end
+
+    test "une réaction est diffusée à tout le salon", %{socket: socket} do
+      ref = push(socket, "react", %{emoji: "👍"})
+      assert_reply ref, :ok
+
+      # l'expéditeur la voit aussi : c'est une confirmation
+      assert_push "reaction", %{color: "red", emoji: "👍"}
+    end
+
+    test "l'emoji est bien celui demandé", %{socket: socket} do
+      for emoji <- ["😂", "🔥", "👏"] do
+        ref = push(socket, "react", %{emoji: emoji})
+        assert_reply ref, :ok
+        assert_push "reaction", %{emoji: ^emoji}
+
+        # on laisse passer le délai anti-rafale
+        Process.sleep(520)
+      end
+    end
+
+    test "un emoji hors de la liste est refusé", %{socket: socket} do
+      ref = push(socket, "react", %{emoji: "<script>"})
+      assert_reply ref, :error, %{reason: "unknown_emoji"}
+      refute_push "reaction", _
+    end
+
+    test "un emoji vide est refusé", %{socket: socket} do
+      ref = push(socket, "react", %{emoji: ""})
+      assert_reply ref, :error, %{reason: "unknown_emoji"}
+    end
+
+    test "deux réactions trop rapprochées : la seconde est refusée", %{socket: socket} do
+      ref = push(socket, "react", %{emoji: "👍"})
+      assert_reply ref, :ok
+      assert_push "reaction", %{emoji: "👍"}
+
+      ref = push(socket, "react", %{emoji: "🔥"})
+      assert_reply ref, :error, %{reason: "too_fast"}
+    end
+
+    test "la couleur suit le camp choisi", %{code: code, socket: socket, reply: reply} do
+      assert reply.seat.seat == 0
+
+      ref = push(socket, "choose_seat", %{seat: 2})
+      assert_reply ref, :ok
+
+      ref = push(socket, "react", %{emoji: "🎉"})
+      assert_reply ref, :ok
+
+      # Alice a pris le camp jaune : sa réaction doit l'annoncer
+      assert_push "reaction", %{color: "yellow", emoji: "🎉"}
+    end
+
+    test "une réaction ne modifie pas l'état de la partie", %{code: code, socket: socket} do
+      {:ok, avant} = Ludo.GameServer.public_state(code)
+
+      ref = push(socket, "react", %{emoji: "👍"})
+      assert_reply ref, :ok
+      assert_push "reaction", _
+
+      {:ok, apres} = Ludo.GameServer.public_state(code)
+      assert apres.version == avant.version
+      assert apres.log == avant.log
+      refute_receive {:game_state, _}, 50
+    end
+  end
+
   describe "connexion au salon" do
     test "renvoie la géométrie, le siège et l'état" do
       {code, host} = create(:p2)

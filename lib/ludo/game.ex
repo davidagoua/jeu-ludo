@@ -35,6 +35,27 @@ defmodule Ludo.Game do
 
   @type position :: :base | 0..61
 
+  # Réactions qu'un joueur peut envoyer. Liste blanche : le serveur ne relaie
+  # jamais un texte libre, seulement l'un de ces pictogrammes.
+  @reactions [
+    "👍",
+    "👎",
+    "😂",
+    "😮",
+    "😡",
+    "😭",
+    "🎉",
+    "😎",
+    "🤔",
+    "😅",
+    "🔥",
+    "💀",
+    "🍀",
+    "😴",
+    "🙏",
+    "👏"
+  ]
+
   @modes %{
     vs_ai: %{
       seats: 4,
@@ -509,6 +530,22 @@ defmodule Ludo.Game do
 
   @doc "Le joueur identifié par `id`, ou nil."
   def player_by_id(game, id), do: Enum.find(game.players, &(&1.id == id and not is_nil(id)))
+
+  @doc "Réactions autorisées, dans l'ordre d'affichage."
+  def reactions, do: @reactions
+
+  @doc """
+  Identité actuelle d'un joueur : sa couleur et son nom.
+
+  Le siège peut changer tant que la partie n'a pas démarré : la couleur est donc
+  relue à chaque réaction plutôt que figée à la connexion.
+  """
+  def player_identity(game, player_id) do
+    case player_by_id(game, player_id) do
+      nil -> {:error, :not_in_game}
+      player -> {:ok, %{color: player.color, name: player.name}}
+    end
+  end
 
   @doc "Pions d'un joueur, sous forme de liste de positions."
   def tokens_of(game, color), do: Map.get(game.tokens, color, List.duplicate(:base, 4))

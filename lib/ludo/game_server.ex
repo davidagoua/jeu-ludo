@@ -90,6 +90,9 @@ defmodule Ludo.GameServer do
   def fill_bots(code, player_id), do: call(code, {:fill_bots, player_id})
   def choose_seat(code, player_id, seat), do: call(code, {:choose_seat, player_id, seat})
   def roll(code, player_id), do: call(code, {:roll, player_id})
+
+  @doc "Identité actuelle d'un joueur : couleur et nom (pour les réactions)."
+  def player_identity(code, player_id), do: call(code, {:player_identity, player_id})
   def move(code, player_id, token), do: call(code, {:move, player_id, token})
   def leave(code, player_id), do: cast(code, {:leave, player_id})
 
@@ -151,6 +154,10 @@ defmodule Ludo.GameServer do
 
   @impl true
   def handle_call(:game, _from, state), do: {:reply, {:ok, state.game}, state}
+
+  def handle_call({:player_identity, player_id}, _from, state) do
+    {:reply, Game.player_identity(state.game, player_id), state}
+  end
 
   # Comme les autres appels : {:ok, état} ou {:error, raison}.
   def handle_call(:public_state, _from, state) do

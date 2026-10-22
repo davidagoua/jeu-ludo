@@ -11,7 +11,11 @@ defmodule LudoWeb.GameChannel do
 
   use Phoenix.Channel
 
-  alias Ludo.{Board, GameServer}
+  alias Ludo.{Board, Game, GameServer}
+
+  # Deux réactions d'un même joueur ne peuvent pas se suivre de plus près : cela
+  # évite de noyer les autres joueurs sous les pictogrammes.
+  @reaction_delay 500
 
   @impl true
   def join("game:" <> code, payload, socket) do
@@ -27,7 +31,13 @@ defmodule LudoWeb.GameChannel do
           |> assign(:code, code)
           |> assign(:player_id, player_id)
 
-        {:ok, %{geometry: Board.geometry(), seat: seat, state: state}, socket}
+        {:ok,
+         %{
+           geometry: Board.geometry(),
+           seat: seat,
+           state: state,
+           reactions: Game.reactions()
+         }, socket}
 
       {:error, reason} ->
         {:error, %{reason: to_string(reason)}}
@@ -59,6 +69,41 @@ defmodule LudoWeb.GameChannel do
       socket,
       GameServer.choose_seat(socket.assigns.code, socket.assigns.player_id, payload["seat"])
     )
+  end
+
+  # Une réaction n'est pas un changement d'état : elle est diffusée telle quelle,
+  # sans toucher à la partie ni à sa version.
+  def handle_in("react", %{"emoji" => emoji}, socket) when is_binary(emoji) do
+    maintenant = System.monotonic_time(:millisecond)
+    derniere = socket.assigns[:derniere_reaction]
+
+    # L'horloge monotone part d'un point arbitraire, parfois négatif : seule la
+    # comparaison entre deux envois est fiable, pas la valeur absolue.
+    trop_tot =
+      is_integer(derniere) and maintenant - derniere < @reaction_delay
+
+    cond do
+      emoji not in Game.reactions() ->
+        {:reply, {:error, error(:unknown_emoji)}, socket}
+
+      trop_tot ->
+        {:reply, {:error, error(:too_fast)}, socket}
+
+      true ->
+        case GameServer.player_identity(socket.assigns.code, socket.assigns.player_id) do
+          {:ok, %{color: color, name: name}} ->
+            broadcast(socket, "reaction", %{
+              color: to_string(color),
+              name: name,
+              emoji: emoji
+            })
+
+            {:reply, :ok, socket |> assign(:derniere_reaction, maintenant)}
+
+          {:error, reason} ->
+            {:reply, {:error, error(reason)}, socket}
+        end
+    end
   end
 
   def handle_in("state", _payload, socket) do
@@ -107,5 +152,7 @@ defmodule LudoWeb.GameChannel do
   defp message(:not_enough_players), do: "Il manque des joueurs."
   defp message(:not_found), do: "Cette partie n'existe plus."
   defp message(:not_playing), do: "La partie n'est pas en cours."
+  defp message(:unknown_emoji), do: "Cette réaction n'existe pas."
+  defp message(:too_fast), do: "Doucement : attendez un instant."
   defp message(_), do: "Action impossible."
 end

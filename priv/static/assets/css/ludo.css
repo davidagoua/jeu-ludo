@@ -489,3 +489,151 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .toast.ok { background: #14281c; border-color: var(--accent); color: #cdf3dd; }
 
 [hidden] { display: none !important; }
+
+/* --------------------------------------------------------- réactions emoji */
+
+/* Couche par-dessus le plateau : elle reçoit les réactions des joueurs. Elle ne
+   capte aucun clic, sinon elle volerait les pions. */
+.reactions {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.reaction {
+  position: absolute;
+  font-size: 2.2rem;
+  line-height: 1;
+  padding: 0.15rem 0.35rem;
+  border-radius: 999px;
+  background: rgba(8, 12, 10, 0.72);
+  border: 2px solid currentColor;
+  animation: reaction-pop 2s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+/* Chaque joueur a son coin : rouge en haut à gauche, bleu en haut à droite,
+   jaune en bas à droite, vert en bas à gauche — comme les bases. */
+.reaction.red {
+  top: 6%;
+  left: 6%;
+  color: #ff5a5f;
+}
+.reaction.blue {
+  top: 6%;
+  right: 6%;
+  color: #4d8dff;
+}
+.reaction.yellow {
+  bottom: 6%;
+  right: 6%;
+  color: #ffc233;
+}
+.reaction.green {
+  bottom: 6%;
+  left: 6%;
+  color: #38c172;
+}
+
+/* Apparition, léger rebond, puis effacement : la durée colle aux deux secondes
+   d'affichage. */
+@keyframes reaction-pop {
+  0% {
+    transform: scale(0.3) translateY(6px);
+    opacity: 0;
+  }
+  12% {
+    transform: scale(1.15) translateY(0);
+    opacity: 1;
+  }
+  22% {
+    transform: scale(1);
+  }
+  75% {
+    transform: scale(1) translateY(-4px);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95) translateY(-16px);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction {
+    animation: reaction-fade 2s linear forwards;
+  }
+  @keyframes reaction-fade {
+    0%,
+    80% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+/* La feuille modale */
+.emoji-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(3, 7, 5, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.emoji-sheet {
+  width: min(22rem, 100%);
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel, #101915);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.emoji-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.9rem;
+}
+
+.emoji {
+  display: grid;
+  place-items: center;
+  font-size: 1.7rem;
+  line-height: 1;
+  padding: 0.45rem 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.emoji:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.emoji:active {
+  transform: scale(0.94);
+}
+
+#emoji-close {
+  width: 100%;
+}

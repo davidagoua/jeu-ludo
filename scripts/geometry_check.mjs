@@ -77,6 +77,15 @@ function makeElement(tag) {
       child.parent = this;
       return child;
     },
+    removeChild(child) {
+      const index = this.children.indexOf(child);
+      if (index >= 0) this.children.splice(index, 1);
+      child.parent = null;
+      return child;
+    },
+    remove() {
+      if (this.parent) this.parent.removeChild(this);
+    },
     addEventListener() {},
     removeEventListener() {},
     focus() {},
@@ -104,6 +113,16 @@ const elementFor = (selector) => {
 
 const listeners = {};
 
+// Rappels différés : on les retient au lieu de les exécuter, ce qui permet de
+// vérifier les délais (l'affichage d'une réaction dure deux secondes).
+const timers = [];
+
+function flushTimers() {
+  const attente = timers.splice(0, timers.length);
+  for (const timer of attente) timer.fn();
+  return attente;
+}
+
 globalThis.window = {
   location: { href: "/" },
   addEventListener: (name, fn) => {
@@ -111,7 +130,10 @@ globalThis.window = {
     listeners[name].push(fn);
   },
   dispatchEvent: (event) => (listeners[event.type] || []).forEach((fn) => fn(event)),
-  setTimeout: () => 0,
+  setTimeout: (fn, delay) => {
+    timers.push({ fn, delay });
+    return timers.length;
+  },
   setInterval: () => 0,
   clearInterval: () => {},
   localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} }
@@ -518,6 +540,119 @@ try {
   erreurHors = e;
 }
 check("choisir un camp hors partie ne plante pas", erreurHors === null, erreurHors && erreurHors.message);
+
+/* ------------------------------------------------------------ réactions */
+
+section("Réactions emoji");
+
+{
+  const MODAL = "#emoji-modal";
+  const GRID = "#emoji-grid";
+  const OVERLAY = "#reactions";
+
+  const liste = ["👍", "😂", "🎉", "🔥", "😭"];
+  api.setupReactions(liste);
+
+  const grid = elementFor(GRID);
+  check("la grille a un bouton par réaction", grid.children.length === liste.length, grid.children.length);
+  check(
+    "chaque bouton porte son emoji",
+    grid.children.every((b, i) => b.textContent === liste[i]),
+    grid.children.map((b) => b.textContent)
+  );
+  check(
+    "chaque bouton est décrit pour les lecteurs d'écran",
+    grid.children.every((b) => (b.getAttribute("aria-label") || "").includes("Réagir")),
+    grid.children.map((b) => b.getAttribute("aria-label"))
+  );
+  check("la liste reçue est retenue", api.reactionsList().length === liste.length);
+
+  const modal = elementFor(MODAL);
+  // dans la page, la modale porte l'attribut `hidden` (vérifié côté Phoenix)
+  modal.hidden = true;
+  check("la modale est fermée au départ", modal.hidden === true);
+
+  api.openEmoji();
+  check("le bouton ouvre la modale", modal.hidden === false);
+
+  // cliquer un emoji referme la modale
+  api.sendReaction("👍");
+  check("choisir une réaction referme la modale", modal.hidden === true);
+
+  // hors partie, l'envoi ne fait rien mais ne plante pas
+  let plantage = null;
+  try {
+    api.sendReaction("😂");
+  } catch (e) {
+    plantage = e;
+  }
+  check("envoyer hors partie ne plante pas", plantage === null, plantage && plantage.message);
+
+  // un emoji inconnu est ignoré
+  let inconnu = null;
+  try {
+    api.sendReaction("🚀");
+  } catch (e) {
+    inconnu = e;
+  }
+  check("un emoji hors liste est ignoré", inconnu === null, inconnu && inconnu.message);
+
+  /* -------------------------------------------------------- affichage */
+
+  const overlay = elementFor(OVERLAY);
+
+  // on remet un état connu pour que le nom du joueur soit retrouvé
+  api.renderState(syntheticState({}));
+
+  timers.length = 0;
+  api.showReaction({ color: "red", name: "Camille", emoji: "🎉" });
+
+  check("une réaction s'affiche sur le plateau", overlay.children.length === 1, overlay.children.length);
+  check(
+    "elle porte l'emoji reçu",
+    overlay.children[0] && overlay.children[0].textContent === "🎉",
+    overlay.children[0] && overlay.children[0].textContent
+  );
+  check(
+    "elle est placée dans le coin du joueur",
+    overlay.children[0] && overlay.children[0].classList.contains("red"),
+    overlay.children[0] && overlay.children[0].className
+  );
+  check(
+    "elle nomme le joueur qui réagit",
+    overlay.children[0] && (overlay.children[0].getAttribute("title") || "").includes("Camille"),
+    overlay.children[0] && overlay.children[0].getAttribute("title")
+  );
+
+  const duree = timers.map((t) => t.delay);
+  check(
+    "elle est retirée au bout de deux secondes",
+    duree.includes(2000) && duree.includes(api.reactionDuration()),
+    duree
+  );
+
+  flushTimers();
+  check("après le délai, plus rien n'est affiché", overlay.children.length === 0, overlay.children.length);
+
+  // deux joueurs peuvent réagir en même temps
+  timers.length = 0;
+  api.showReaction({ color: "blue", emoji: "😂" });
+  api.showReaction({ color: "green", emoji: "🔥" });
+  check("deux réactions simultanées s'affichent ensemble", overlay.children.length === 2, overlay.children.length);
+  check(
+    "chacune reste dans son coin",
+    overlay.children[0].classList.contains("blue") && overlay.children[1].classList.contains("green"),
+    overlay.children.map((c) => c.className)
+  );
+
+  flushTimers();
+  check("elles disparaissent ensemble", overlay.children.length === 0, overlay.children.length);
+
+  // une réaction malformée est ignorée
+  api.showReaction({});
+  api.showReaction(null);
+  check("une réaction vide est ignorée", overlay.children.length === 0, overlay.children.length);
+}
 
 /* ------------------------------------------------------------ bruitage */
 
